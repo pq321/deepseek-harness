@@ -15,6 +15,12 @@
       "path": "../../../vendor/loader"
     },
     {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
       "path": "../../util/brand"
     },
     {

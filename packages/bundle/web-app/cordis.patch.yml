@@ -90,7 +90,7 @@
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 
-    # Read-only projection of current Loader entries for trusted client RPCs.
+    # Profile package updates and live Loader entry management for trusted clients.
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 

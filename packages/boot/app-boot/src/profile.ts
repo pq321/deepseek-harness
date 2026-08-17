@@ -4,13 +4,15 @@
  *
  * A profile is a directory under `$DSH_HOME/profiles/<name>` holding a
  * `package.json` (out-of-tree plugin dependencies plus the profile manifest
- * `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml`
+ * `dsh.profile` with its ordered `bundles` list and optional `entryStates`)
+ * and a `cordis.patch.yml`
  * (the user's own patch layer, applied after every bundle layer). Bundles are
  * npm packages whose manifest declares
  * `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`; the tree is
  * composed by applying each bundle's patch list in `dsh.profile.bundles` order over
- * an empty entry list, then the profile's own patches, then any launcher
- * layers (`--patch` files and flag-derived patches).
+ * an empty entry list, then the profile's own patches, home patches,
+ * manifest entry states, and launcher layers (`--patch` files and
+ * flag-derived patches).
  *
  * Module resolution is two-anchor by construction: a bundle name resolves
  * first from the dsh installation (the launcher's own package), then from the
@@ -48,6 +50,8 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
   /** Ordered bundle layer list (package names). */
   bundles?: string[]
+  /** Browser-managed enablement overrides keyed by stable Loader entry id. */
+  entryStates?: Record<string, boolean>
 }
 
 /**
@@ -93,6 +97,31 @@ export interface Profile {
   patchPath: string
   /** The profile's own patches; empty when the file is absent. */
   patches: PatchOptions[]
+  /** Enablement patches derived from `dsh.profile.entryStates`. */
+  entryStatePatches: PatchOptions[]
+}
+
+/**
+ * Validate and project profile-managed entry states into Loader patches.
+ * @param manifest - Parsed profile package manifest.
+ * @param path - Manifest path named in validation diagnostics.
+ * @returns One enablement patch per declared entry state.
+ */
+export function profileEntryStatePatches(manifest: ProfileManifest, path: string): PatchOptions[] {
+  const states: unknown = manifest.dsh?.profile?.entryStates
+  if (states === undefined) return []
+  if (typeof states !== 'object' || states === null || Array.isArray(states)) {
+    throw new Error(`dsh: profile manifest ${path} dsh.profile.entryStates must hold a JSON object`)
+  }
+  return Object.entries(states).map(([id, enabled]) => {
+    if (id.length === 0) {
+      throw new Error(`dsh: profile manifest ${path} dsh.profile.entryStates contains an empty entry id`)
+    }
+    if (typeof enabled !== 'boolean') {
+      throw new Error(`dsh: profile manifest ${path} dsh.profile.entryStates.${id} must be a boolean`)
+    }
+    return { id, disabled: !enabled }
+  })
 }
 
 /**
@@ -383,6 +412,7 @@ export function loadProfile(
     initProfile(dir, template)
   }
   const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  const entryStatePatches = profileEntryStatePatches(manifest, join(dir, 'package.json'))
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
@@ -399,7 +429,7 @@ export function loadProfile(
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
-  return { name, dir, layers, patchPath, patches }
+  return { name, dir, layers, patchPath, patches, entryStatePatches }
 }
 
 /**
