@@ -48,11 +48,19 @@ A finished turn materializes one ordered `turn-tail` Conversation Node. Its engi
 
 ## Model Experience
 
-Non-image references add their browser-visible names or relative paths to the submitted user text. File contents are not uploaded or read.
+### File references
+
+#### What the model sees
+
+The submitted user message gains a trailing `Referenced files (content not uploaded)` section containing each browser-visible name or relative path. File contents are not uploaded or read.
+
+#### Token effect
+
+Each reference adds the fixed section heading plus its JSON-escaped path or name to the conversation context.
 
 #### KV Cache effect
 
-Each reference adds the fixed section heading plus its escaped path/name tokens to the conversation context. File bytes have no cache effect because they never enter the request.
+The reference text participates in the user-message prefix like ordinary prompt text. File bytes have no cache effect because they never enter the request.
 
 ## Known Limitations and Deferred Work
 
