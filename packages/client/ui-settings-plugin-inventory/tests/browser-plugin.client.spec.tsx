@@ -13,7 +13,7 @@ import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInv
 usePinnedBrowserLanguages('zh-CN')
 afterEach(cleanup)
 
-const EMPTY = { entries: [] }
+const EMPTY = { packages: [], entries: [] }
 type ListResult =
   | { readonly ok: true; readonly value: typeof EMPTY }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
@@ -31,8 +31,10 @@ async function bench() {
   new RemoteService(ctx)
   const list = vi.fn<() => Promise<ListResult>>()
     .mockResolvedValue({ ok: true, value: EMPTY })
-  ctx.provide('remote.pluginInventory', { list })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list }
+  const setEnabled = vi.fn().mockResolvedValue({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+  const checkAndUpdate = vi.fn().mockResolvedValue({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+  ctx.provide('remote.pluginInventory', { list, setEnabled, checkAndUpdate } as never)
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, setEnabled, checkAndUpdate }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -64,6 +66,10 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).toHaveBeenCalledOnce()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list()).rejects.toThrow('pluginInventory.list failed: REMOTE_ERROR: unavailable')
+    await expect(injected.setEnabled('entry' as never, true))
+      .rejects.toThrow('pluginInventory.setEnabled failed: REMOTE_ERROR: unavailable')
+    await expect(injected.checkAndUpdate('package' as never))
+      .rejects.toThrow('pluginInventory.checkAndUpdate failed: REMOTE_ERROR: unavailable')
     await b.ctx.fiber.dispose()
   })
 

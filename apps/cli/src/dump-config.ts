@@ -2,7 +2,8 @@
  * Config-dump entry for `dsh --profile <name> --dump-config`: compose the
  * profile's patch layers through the include plugin's patch algorithm without
  * booting or evaluating `!!js`, with one source layer per bundle, the
- * profile's own patch file, and each `--patch` overlay.
+ * profile/home patch files, profile-manifest entry states, and each
+ * `--patch` overlay.
  * @module @deepseek-ai/dsh/dump-config
  */
 
@@ -41,6 +42,12 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
     const homePatches = loadOptionalPatches(NAME, homePatchFile)
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })
+    }
+    if (loaded.entryStatePatches.length > 0) {
+      layers.push({
+        label: join(loaded.dir, 'package.json') + '#dsh.profile.entryStates',
+        patches: loaded.entryStatePatches,
+      })
     }
     for (const file of patches) {
       const absolute = resolve(file)

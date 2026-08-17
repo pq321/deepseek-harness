@@ -143,6 +143,32 @@ describe('loadProfile', () => {
     expect(bare.layers).toEqual([])
   })
 
+  it('validates profile entry states and projects them as final enablement patches', () => {
+    const anchor = stageInstallation({
+      'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['bundle-a'])
+    const manifest = readProfileManifest('t', dir)
+    manifest.dsh = {
+      ...manifest.dsh,
+      profile: { ...manifest.dsh?.profile, entryStates: { a: false } },
+    }
+    writeProfileManifest(dir, manifest)
+
+    const profile = loadProfile('t', 'demo', anchor, home)
+    expect(profile.entryStatePatches).toEqual([{ id: 'a', disabled: true }])
+    expect(composeEntries([
+      ...profile.layers.map(layer => layer.patches),
+      profile.entryStatePatches,
+    ])).toEqual([{ id: 'a', name: 'pkg-a', disabled: true }])
+
+    manifest.dsh.profile!.entryStates = { a: 'disabled' as never }
+    writeProfileManifest(dir, manifest)
+    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('entryStates.a must be a boolean')
+  })
+
   it('auto-initializes only shipped templates and fails loud otherwise', () => {
     const anchor = stageInstallation({})
     const home = tmp()

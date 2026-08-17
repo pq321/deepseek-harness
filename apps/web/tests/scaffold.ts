@@ -522,6 +522,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
+    await writeFile(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-scaffold',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+    }, undefined, 2) + '\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
     ctx.provide('dshHomePath', dshHomePath)

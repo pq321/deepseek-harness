@@ -10,6 +10,11 @@ import clsx from 'clsx'
 import { IconCloseOutline16 } from './icons/index.tsx'
 import css from './Modal.module.css'
 
+/** Keep viewport overlays outside ancestor clipping and stacking contexts. */
+export function BodyPortal({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body)
+}
+
 /**
  * Render a centered modal over a blurred page mask.
  * @param props.open - whether the dialog is showing.
@@ -52,7 +57,7 @@ export function Modal({
 
   if (!open) return null
 
-  return createPortal((
+  return <BodyPortal>
     <div className={css.root} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div
@@ -82,5 +87,5 @@ export function Modal({
           )}
       </div>
     </div>
-  ), document.body)
+  </BodyPortal>
 }

@@ -1,7 +1,7 @@
 /**
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
- * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
- * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
+ * patch layers (bundle layers in `dsh.profile.bundles` order, profile/home
+ * `cordis.patch.yml`, manifest entry states, `--patch` overlays, the telemetry switch), mount the
  * tree over the profile's empty root config, keep the profile patch layer
  * live, and wire fail-loud plus bounded shutdown.
  *
@@ -25,7 +25,9 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
+  profileEntryStatePatches,
   PROFILE_PATCH_FILENAME,
+  readProfileManifest,
   watchUserPatches,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
@@ -109,6 +111,8 @@ interface ComposedProfile {
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
   homePatches: PatchOptions[]
+  /** Profile-manifest enablement overrides, applied after user patch layers. */
+  entryStatePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
   /**
@@ -124,6 +128,7 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
     ...composed.bundlePatches,
     ...composed.profile.patches,
     ...composed.homePatches,
+    ...composed.entryStatePatches,
     ...composed.overlays,
   ]
 }
@@ -133,8 +138,8 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
  * platform on its own rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
- * to every profile, so it outranks the per-profile layer), `--patch` overlays,
- * then the telemetry switch.
+ * to every profile, so it outranks the per-profile layer), profile-manifest
+ * entry states, `--patch` overlays, then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
  * @returns the profile, its patch layers, and the composed row index.
@@ -148,7 +153,13 @@ function composeProfile(
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
+  for (const row of composeEntries([
+    bundlePatches,
+    profile.patches,
+    homePatches,
+    profile.entryStatePatches,
+    overlays,
+  ])) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const composedOverlays = [...overlays]
@@ -167,7 +178,14 @@ function composeProfile(
   }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
+  return {
+    profile,
+    bundlePatches,
+    homePatches,
+    entryStatePatches: profile.entryStatePatches,
+    overlays: composedOverlays,
+    rows,
+  }
 }
 
 /** Options for {@link runProfile}. */
@@ -241,6 +259,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
     ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    ...profileEntryStatePatches(
+      readProfileManifest(NAME, composed.profile.dir),
+      join(composed.profile.dir, 'package.json'),
+    ),
     ...composed.overlays,
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
