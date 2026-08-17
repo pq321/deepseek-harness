@@ -35,7 +35,7 @@ const labels: AttachmentRailLabels = {
 }
 
 function item(id: string): AttachmentRailItem {
-  return { id, previewUrl: `blob:${id}`, alt: `${id}.png`, removeLabel: `移除图片 ${id}.png` }
+  return { kind: 'image', id, previewUrl: `blob:${id}`, alt: `${id}.png`, removeLabel: `移除图片 ${id}.png` }
 }
 
 /** Stub the rail's scroll geometry (jsdom reports 0 for every metric). */
@@ -67,6 +67,23 @@ describe('AttachmentRail', () => {
     expect(onOpen).toHaveBeenCalledWith(items[0])
     fireEvent.click(view.getByRole('button', { name: '移除图片 b.png' }))
     expect(onRemove).toHaveBeenCalledWith(items[1])
+  })
+
+  it('renders a metadata-only file reference as a compact row without an open action', () => {
+    const onOpen = vi.fn()
+    const file = {
+      kind: 'file' as const,
+      id: 'report',
+      name: 'reports/summary.pdf',
+      detail: 'application/pdf · 24 KB',
+      removeLabel: '移除文件引用 reports/summary.pdf',
+    }
+    const view = render(<AttachmentRail items={[file]} labels={labels} onOpen={onOpen} onRemove={vi.fn()} />)
+    expect(view.getByText('reports/summary.pdf')).toBeTruthy()
+    expect(view.getByText('application/pdf · 24 KB')).toBeTruthy()
+    expect(view.queryByTitle('查看原图')).toBeNull()
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: '移除文件引用 reports/summary.pdf' })).toBeTruthy()
   })
 
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {

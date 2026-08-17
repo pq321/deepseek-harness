@@ -102,13 +102,13 @@ export function dropOverlayLabels(
 }
 
 /**
- * Resolve the composer draft-image rail strings.
+ * Resolve the composer draft-attachment rail strings.
  * @param t - the conversation-namespace translate.
  * @returns the rail group, open-tooltip, and paging-arrow labels.
  */
 export function attachmentRailLabels(t: Translate<ConversationKey>): AttachmentRailLabels {
   return {
-    group: t('image.pending'),
+    group: t('attachment.pending'),
     open: t('image.openOriginal'),
     scrollLeft: t('image.scrollLeft'),
     scrollRight: t('image.scrollRight'),

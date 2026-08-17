@@ -45,7 +45,7 @@ export interface SessionInputDeps {
    */
   steerQueue?: (() => void) | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-  defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void
+  defaultSink(text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void
 }
 
 /** Guard tier from the machine phase. */
@@ -74,9 +74,9 @@ export class SessionInputShell implements SessionInput {
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
     setDraft: (text) => { this.setDraft(text) },
-    addImages: ids => this.addImages(ids),
-    removeImage: (id) => { this.removeImage(id) },
-    pruneImages: (ids) => { this.pruneImages(ids) },
+    addAttachments: ids => this.addAttachments(ids),
+    removeAttachment: (id) => { this.removeAttachment(id) },
+    pruneAttachments: (ids) => { this.pruneAttachments(ids) },
     submit: () => { this.submit('queue') },
   }
 
@@ -85,7 +85,7 @@ export class SessionInputShell implements SessionInput {
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
   private lastDraft = ''
-  private imageIds: readonly DraftAttachmentId[] = []
+  private attachmentIds: readonly DraftAttachmentId[] = []
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
@@ -107,42 +107,42 @@ export class SessionInputShell implements SessionInput {
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
   }
 
-  /** Append ordered image ids unless an admission transaction is locked. */
-  addImages(ids: readonly DraftAttachmentId[]): boolean {
+  /** Append ordered attachment ids unless an admission transaction is locked. */
+  addAttachments(ids: readonly DraftAttachmentId[]): boolean {
     if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
     if (ids.length === 0) return true
-    this.imageIds = [...this.imageIds, ...ids]
+    this.attachmentIds = [...this.attachmentIds, ...ids]
     this.publish()
     return true
   }
 
-  /** Remove one image id from this draft. */
-  removeImage(id: DraftAttachmentId): void {
-    const next = this.imageIds.filter(candidate => candidate !== id)
-    if (next.length === this.imageIds.length) return
-    this.imageIds = next
+  /** Remove one attachment id from this draft. */
+  removeAttachment(id: DraftAttachmentId): void {
+    const next = this.attachmentIds.filter(candidate => candidate !== id)
+    if (next.length === this.attachmentIds.length) return
+    this.attachmentIds = next
     this.publish()
   }
 
   /**
-   * Keep only image ids that still resolve in the browser attachment registry.
+   * Keep only ids that still resolve in the browser attachment registry.
    * @param available - live registry ids.
    */
-  pruneImages(available: readonly DraftAttachmentId[]): void {
+  pruneAttachments(available: readonly DraftAttachmentId[]): void {
     const keep = new Set(available)
-    const next = this.imageIds.filter(id => keep.has(id))
-    if (next.length === this.imageIds.length) return
-    this.imageIds = next
+    const next = this.attachmentIds.filter(id => keep.has(id))
+    if (next.length === this.attachmentIds.length) return
+    this.attachmentIds = next
     this.publish()
   }
 
   /**
-   * Restore a failed attempt before any images added after its admission.
-   * @param ids - failed attempt image ids.
+   * Restore a failed attempt before any attachments added after its admission.
+   * @param ids - failed attempt attachment ids.
    */
-  restoreImages(ids: readonly DraftAttachmentId[]): void {
-    const current = new Set(this.imageIds)
-    this.imageIds = [...ids.filter(id => !current.has(id)), ...this.imageIds]
+  restoreAttachments(ids: readonly DraftAttachmentId[]): void {
+    const current = new Set(this.attachmentIds)
+    this.attachmentIds = [...ids.filter(id => !current.has(id)), ...this.attachmentIds]
     this.publish()
   }
 
@@ -150,11 +150,11 @@ export class SessionInputShell implements SessionInput {
    * Clear the draft as a successful-send commit: no undo unit is recorded and
    * the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent content
    * (the command path gets the same discipline from submit-settled success).
-   * @param imageIds - admitted image ids to remove from this draft.
+   * @param attachmentIds - admitted attachment ids to remove from this draft.
    */
-  commitSend(imageIds: readonly DraftAttachmentId[]): void {
-    const submitted = new Set(imageIds)
-    this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+  commitSend(attachmentIds: readonly DraftAttachmentId[]): void {
+    const submitted = new Set(attachmentIds)
+    this.attachmentIds = this.attachmentIds.filter(id => !submitted.has(id))
     this.run(this.core.dispatch({ type: 'send-committed' }))
   }
 
@@ -196,8 +196,8 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
-    if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain') this.deps.defaultSink('', [...this.imageIds], mode)
+    if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
+      if (this.snapshot.phase === 'plain') this.deps.defaultSink('', [...this.attachmentIds], mode)
       return
     }
     this.run(this.core.dispatch({ type: 'enter', mode }))
@@ -414,10 +414,10 @@ export class SessionInputShell implements SessionInput {
    * the clipboard text. Chip-free drafts skip the async detour.
    */
   private sinkSerialized(draft: string, mode: InputSubmitMode): void {
-    const imageIds = [...this.imageIds]
+    const attachmentIds = [...this.attachmentIds]
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.deps.defaultSink(draft.trim(), imageIds, mode)
+      this.deps.defaultSink(draft.trim(), attachmentIds, mode)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -437,7 +437,7 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + 1
         }
         out += draft.slice(cursor)
-        this.deps.defaultSink(out.trim(), imageIds, mode)
+        this.deps.defaultSink(out.trim(), attachmentIds, mode)
       },
       (error: unknown) => {
         controller.abort()
@@ -495,7 +495,7 @@ export class SessionInputShell implements SessionInput {
 
   private compose(): InputState {
     const core = this.core.state
-    return { ...core, imageIds: this.imageIds, queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE }
+    return { ...core, attachmentIds: this.attachmentIds, queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE }
   }
 
   private publish(): void {

@@ -23,12 +23,24 @@ import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
-export interface ComposerAttachment {
+export interface ComposerImageAttachment {
   kind: 'image'
   id: DraftAttachmentId
   file: File
   previewUrl: string
 }
+
+/** Browser-owned file metadata represented as a reference, never uploaded. */
+export interface ComposerFileReference {
+  kind: 'file'
+  id: DraftAttachmentId
+  file: File
+  /** Browser-visible path when available, otherwise the file name. */
+  reference: string
+}
+
+/** One unsent composer attachment in draft order. */
+export type ComposerAttachment = ComposerImageAttachment | ComposerFileReference
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -493,12 +505,12 @@ export interface ComposerBarOwnerProps {
 export interface ComposerBarInjected {
   /** The InputBar-exclusive keyboard/DOM command face (private plane); absent with the session. */
   keyboard: ComposerKeyboard | undefined
-  /** Create previews and append image ids to the session input. */
-  addImages: ((files: readonly File[]) => string | null) | undefined
-  /** Release one preview and remove its id from session input. */
-  removeImage: ((id: DraftAttachmentId) => void) | undefined
-  /** Resolve ordered input ids to browser-owned draft images. */
-  draftImages: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
+  /** Create browser-owned descriptors and append their ids to the session input. */
+  addAttachments: ((files: readonly File[]) => string | null) | undefined
+  /** Release one browser-owned descriptor and remove its id from session input. */
+  removeAttachment: ((id: DraftAttachmentId) => void) | undefined
+  /** Resolve ordered input ids to browser-owned draft attachments. */
+  draftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
   /** Resolve one keyboard submission gesture against the current running state and persisted preference. */
   resolveSubmitMode: (
     running: boolean,

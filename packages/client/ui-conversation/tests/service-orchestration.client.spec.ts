@@ -10,7 +10,7 @@ import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-run
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
+import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
 async function bench(readAttachment?: SessionFace['readAttachment']) {
@@ -88,13 +88,13 @@ describe('ConversationController', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
     try {
-      const [attachment] = b.root.createDraftImages([
+      const [attachment] = b.root.createDraftAttachments([
         new File([new Uint8Array(4)], 'a.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
-      b.root.input.for(b.runtime.sessions.scope('s1')!).addImages([attachment.id])
+      b.root.input.for(b.runtime.sessions.scope('s1')!).addAttachments([attachment.id])
       await b.runtime.sessions.remove('s1')
-      expect(b.root.draftImages([attachment.id])).toEqual([])
+      expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([])
       expect(revoked).toHaveBeenCalledWith('blob:draft-1')
     } finally {
       created.mockRestore()
@@ -103,15 +103,68 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('validates every MIME type before allocating previews', async () => {
+  it('creates previews only for supported raster images and references every other file type', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
-    expect(() => b.root.createDraftImages([
+    const attachments = b.root.createDraftAttachments([
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
-      new File([Uint8Array.of(2)], 'invalid.svg', { type: 'image/svg+xml' }),
-    ])).toThrow(UnsupportedImageMediaTypeError)
-    expect(created).not.toHaveBeenCalled()
+      new File([Uint8Array.of(2)], 'diagram.svg', { type: 'image/svg+xml' }),
+      new File([Uint8Array.of(3)], 'archive.zip', { type: 'application/zip' }),
+    ])
+    expect(attachments.map(attachment => attachment.kind)).toEqual(['image', 'file', 'file'])
+    expect(attachments[1]).toMatchObject({ kind: 'file', reference: 'diagram.svg' })
+    expect(attachments[2]).toMatchObject({ kind: 'file', reference: 'archive.zip' })
+    expect(created).toHaveBeenCalledOnce()
     created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('submits file metadata as durable text without reading or uploading file bytes', async () => {
+    const b = await bench()
+    const file = new File([Uint8Array.of(1, 2, 3)], 'report.pdf', { type: 'application/pdf' })
+    const read = vi.fn(() => Promise.resolve(new ArrayBuffer(3)))
+    Object.defineProperty(file, 'arrayBuffer', { value: read })
+    const [attachment] = b.root.createDraftAttachments([file])
+    if (attachment === undefined) throw new Error('draft attachment missing')
+    await b.root.sendSession(
+      b.runtime.sessions.binding('s1')!.session,
+      'summarize this file',
+      [attachment.id],
+      'queue',
+    )
+    expect(read).not.toHaveBeenCalled()
+    expect(b.prompt).toHaveBeenCalledWith([{
+      type: 'text',
+      text: 'summarize this file\n\nReferenced files (content not uploaded):\n- "report.pdf"',
+    }], 'queue')
+    expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([])
+    await b.runtime.dispose()
+  })
+
+  it('keeps image upload behavior while serializing mixed file references as text', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mixed')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
+    const image = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    Object.defineProperty(image, 'arrayBuffer', { value: vi.fn(() => Promise.resolve(Uint8Array.of(1).buffer)) })
+    const archive = new File([Uint8Array.of(9)], 'bundle.zip', { type: 'application/zip' })
+    const archiveRead = vi.fn(() => Promise.reject(new Error('must not read')))
+    Object.defineProperty(archive, 'arrayBuffer', { value: archiveRead })
+    const attachments = b.root.createDraftAttachments([image, archive])
+    await b.root.sendSession(
+      b.runtime.sessions.binding('s1')!.session,
+      '',
+      attachments.map(attachment => attachment.id),
+      'steer',
+    )
+    expect(archiveRead).not.toHaveBeenCalled()
+    expect(b.prompt).toHaveBeenCalledWith([
+      { type: 'image', mediaType: 'image/png', data: 'AQ==', name: 'pixel.png' },
+      { type: 'text', text: 'Referenced files (content not uploaded):\n- "bundle.zip"' },
+    ], 'steer')
+    expect(revoked).toHaveBeenCalledWith('blob:mixed')
+    created.mockRestore()
+    revoked.mockRestore()
     await b.runtime.dispose()
   })
 

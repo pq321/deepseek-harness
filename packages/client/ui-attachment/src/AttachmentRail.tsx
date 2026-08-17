@@ -4,21 +4,38 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14,
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconPaperclipOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './AttachmentRail.module.css'
 
-/** One rail thumbnail; strings arrive resolved (zero-cordis atom). */
-export interface AttachmentRailItem {
+/** Fields shared by every draft-attachment rail item. */
+interface AttachmentRailItemBase {
   /** Stable identity for the React key. */
   id: string
+  /** Accessible label of the item's remove control. */
+  removeLabel: string
+}
+
+/** One previewable raster image. */
+export interface AttachmentRailImageItem extends AttachmentRailItemBase {
+  kind: 'image'
   /** Object or data URL rendered as the thumbnail. */
   previewUrl: string
   /** Image alt text (display name with the owner's fallback applied). */
   alt: string
-  /** Accessible label of the item's remove control. */
-  removeLabel: string
 }
+
+/** One metadata-only file reference. */
+export interface AttachmentRailFileItem extends AttachmentRailItemBase {
+  kind: 'file'
+  /** Browser-visible file name or relative path. */
+  name: string
+  /** Secondary metadata such as MIME type and size. */
+  detail: string
+}
+
+/** One ordered draft attachment rendered in the rail. */
+export type AttachmentRailItem = AttachmentRailImageItem | AttachmentRailFileItem
 
 /** Rail-level strings the owner resolves from its own locale namespace. */
 export interface AttachmentRailLabels {
@@ -165,15 +182,27 @@ export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, on
         onScroll={updateEdges}
       >
         {items.map(item => (
-          <div key={item.id} className={css.item}>
-            <button
-              type="button"
-              className={css.thumbnail}
-              title={labels.open}
-              onClick={() => { onOpen(item) }}
-            >
-              <img src={item.previewUrl} alt={item.alt} />
-            </button>
+          <div key={item.id} className={clsx(css.item, item.kind === 'image' ? css.imageItem : css.fileItem)}>
+            {item.kind === 'image'
+              ? (
+                <button
+                  type="button"
+                  className={css.thumbnail}
+                  title={labels.open}
+                  onClick={() => { onOpen(item) }}
+                >
+                  <img src={item.previewUrl} alt={item.alt} />
+                </button>
+              )
+              : (
+                <div className={css.fileReference} title={item.name}>
+                  <span className={css.fileIcon} aria-hidden><IconPaperclipOutline16 /></span>
+                  <span className={css.fileText}>
+                    <span className={css.fileName}>{item.name}</span>
+                    <span className={css.fileDetail}>{item.detail}</span>
+                  </span>
+                </div>
+              )}
             <button
               type="button"
               className={css.remove}

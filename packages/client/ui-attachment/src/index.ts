@@ -7,7 +7,9 @@
  */
 
 export { AttachmentRail } from './AttachmentRail.tsx'
-export type { AttachmentRailItem, AttachmentRailLabels } from './AttachmentRail.tsx'
+export type {
+  AttachmentRailFileItem, AttachmentRailImageItem, AttachmentRailItem, AttachmentRailLabels,
+} from './AttachmentRail.tsx'
 export { DropOverlay } from './DropOverlay.tsx'
 export type { DropOverlayLabels } from './DropOverlay.tsx'
 export { ImageLightbox } from './ImageLightbox.tsx'

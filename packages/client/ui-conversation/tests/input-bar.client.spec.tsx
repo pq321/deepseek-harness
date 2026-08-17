@@ -85,7 +85,7 @@ interface BenchOptions {
   leftItems?: React.ReactNode
   rightItems?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
-  addImages?: (files: readonly File[]) => string | null
+  addAttachments?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
@@ -130,9 +130,9 @@ function bench(over?: BenchOptions) {
       : {}),
   })
   if (over?.draft !== undefined && over.draft !== '') shell.setDraft(over.draft)
-  if (over?.attachments !== undefined) shell.addImages(over.attachments.map(attachment => attachment.id))
+  if (over?.attachments !== undefined) shell.addAttachments(over.attachments.map(attachment => attachment.id))
   const stop = vi.fn()
-  const removeImage = vi.fn((id: DraftAttachmentId) => { shell.removeImage(id) })
+  const removeAttachment = vi.fn((id: DraftAttachmentId) => { shell.removeAttachment(id) })
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
@@ -160,9 +160,9 @@ function bench(over?: BenchOptions) {
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
-    addImages: over?.addImages ?? (() => null),
-    removeImage,
-    draftImages: ids => ids.flatMap((id) => {
+    addAttachments: over?.addAttachments ?? (() => null),
+    removeAttachment,
+    draftAttachments: ids => ids.flatMap((id) => {
       const attachment = over?.attachments?.find(candidate => candidate.id === id)
       return attachment === undefined ? [] : [attachment]
     }),
@@ -198,16 +198,16 @@ function bench(over?: BenchOptions) {
   )!
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
-    view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeImage, slotCalls,
+    view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeAttachment, slotCalls,
     menuLauncher,
     steerQueue: over?.steerQueue,
   }
 }
 
-describe('image draft rail', () => {
+describe('attachment draft rail', () => {
   it('collects clipboard files while preserving text from a mixed paste', () => {
-    const addImages = vi.fn(() => null)
-    const { textarea, shell } = bench({ addImages })
+    const addAttachments = vi.fn(() => null)
+    const { textarea, shell } = bench({ addAttachments })
     const image = new File([Uint8Array.of(1, 2, 3)], 'pixel.png', { type: 'image/png' })
     fireEvent.paste(textarea, {
       clipboardData: {
@@ -218,28 +218,28 @@ describe('image draft rail', () => {
         getData: () => '同时粘贴的文字',
       },
     })
-    expect(addImages).toHaveBeenCalledWith([image])
+    expect(addAttachments).toHaveBeenCalledWith([image])
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
   })
 
   it('accepts a drop anywhere on the page under the full-page overlay', () => {
-    const addImages = vi.fn(() => null)
-    const { view } = bench({ addImages })
+    const addAttachments = vi.fn(() => null)
+    const { view } = bench({ addAttachments })
     const image = new File([Uint8Array.of(1)], 'dropped.png', { type: 'image/png' })
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
     // The drag never touches the composer card: the listeners are page-wide.
     expect(fireEvent.dragEnter(document.body, { dataTransfer })).toBe(false)
-    expect(view.getByRole('status').textContent).toContain('图片拖动到此处即可添加')
+    expect(view.getByRole('status').textContent).toContain('拖动图片或文件到此处即可添加')
     expect(fireEvent.dragOver(document.body, { dataTransfer })).toBe(false)
     expect(dataTransfer.dropEffect).toBe('copy')
     expect(fireEvent.drop(document.body, { dataTransfer })).toBe(false)
-    expect(addImages).toHaveBeenCalledWith([image])
+    expect(addAttachments).toHaveBeenCalledWith([image])
     expect(view.queryByRole('status')).toBeNull()
   })
 
   it('keeps text drags native and hides the overlay when the drag leaves or ends', () => {
-    const addImages = vi.fn(() => null)
-    const { view } = bench({ addImages })
+    const addAttachments = vi.fn(() => null)
+    const { view } = bench({ addAttachments })
     // A text drag carries no Files type: no overlay, native behavior stays.
     fireEvent.dragEnter(document.body, { dataTransfer: { types: ['text/plain'], files: [], dropEffect: 'none' } })
     expect(view.queryByRole('status')).toBeNull()
@@ -254,7 +254,7 @@ describe('image draft rail', () => {
     expect(view.getByRole('status')).toBeTruthy()
     fireEvent.dragEnd(window, { dataTransfer })
     expect(view.queryByRole('status')).toBeNull()
-    expect(addImages).not.toHaveBeenCalled()
+    expect(addAttachments).not.toHaveBeenCalled()
   })
 
   it('pre-checks projected limits at intake: whole-batch refusal with product copy, none added', () => {
@@ -270,37 +270,37 @@ describe('image draft rail', () => {
       fireEvent.drop(document.body, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
     }
     // Count: three at once over a two-image limit → the whole batch refused.
-    const overCount = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+    const overCount = bench({ addAttachments: vi.fn(() => null), imageLimits: limits })
     drop([png(8, 'a.png'), png(8, 'b.png'), png(8, 'c.png')])
     expect(overCount.view.getByRole('alert').textContent).toContain('一条消息最多添加 2 张图片')
-    expect(overCount.props.addImages).not.toHaveBeenCalled()
+    expect(overCount.props.addAttachments).not.toHaveBeenCalled()
     cleanup()
     // Per-file bytes.
-    const overFile = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+    const overFile = bench({ addAttachments: vi.fn(() => null), imageLimits: limits })
     drop([png(1024 * 1024 + 1, 'big.png')])
     expect(overFile.view.getByRole('alert').textContent).toContain('单张图片不能超过 1MB')
-    expect(overFile.props.addImages).not.toHaveBeenCalled()
+    expect(overFile.props.addAttachments).not.toHaveBeenCalled()
     cleanup()
     // Aggregate bytes across the existing rail plus the new batch.
     const held = new File([new ArrayBuffer(1024 * 1024 * 1.5)], 'held.png', { type: 'image/png' })
     const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file: held, previewUrl: 'blob:held' }
-    const overTotal = bench({ addImages: vi.fn(() => null), imageLimits: limits, attachments: [attachment] })
+    const overTotal = bench({ addAttachments: vi.fn(() => null), imageLimits: limits, attachments: [attachment] })
     drop([png(1024 * 1024, 'more.png')])
     expect(overTotal.view.getByRole('alert').textContent).toContain('图片总大小超过 2MB')
-    expect(overTotal.props.addImages).not.toHaveBeenCalled()
+    expect(overTotal.props.addAttachments).not.toHaveBeenCalled()
     cleanup()
-    // Within every limit: the batch passes through to addImages.
-    const within = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+    // Within every limit: the batch passes through to addAttachments.
+    const within = bench({ addAttachments: vi.fn(() => null), imageLimits: limits })
     const fits = png(16, 'fits.png')
     drop([fits])
-    expect(within.props.addImages).toHaveBeenCalledWith([fits])
+    expect(within.props.addAttachments).toHaveBeenCalledWith([fits])
     expect(within.view.queryByRole('alert')).toBeNull()
   })
 
-  it('announces the format problem before any limit when the batch holds a non-image', () => {
-    const addImages = vi.fn(() => '仅支持 PNG、JPG、WebP、GIF 格式的图片')
+  it('lets arbitrary file references bypass image count and byte limits', () => {
+    const addAttachments = vi.fn(() => null)
     const { view } = bench({
-      addImages,
+      addAttachments,
       imageLimits: {
         maxImageBytes: 8,
         maxImagesPerMessage: 1,
@@ -309,19 +309,19 @@ describe('image draft rail', () => {
         mediaTypes: ['image/png'] as const,
       },
     })
-    // Oversized AND over-count AND wrong type: the format rejection wins.
+    // These would exceed every image limit, but they are references only.
     const files = [
       new File([new ArrayBuffer(64)], 'a.pdf', { type: 'application/pdf' }),
       new File([new ArrayBuffer(64)], 'b.pdf', { type: 'application/pdf' }),
     ]
     fireEvent.drop(document.body, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
-    expect(addImages).toHaveBeenCalledWith(files)
-    expect(view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
+    expect(addAttachments).toHaveBeenCalledWith(files)
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('shows the projected limits in the drop overlay desc line', () => {
     const { view } = bench({
-      addImages: vi.fn(() => null),
+      addAttachments: vi.fn(() => null),
       imageLimits: {
         maxImageBytes: 5 * 1024 * 1024,
         maxImagesPerMessage: 20,
@@ -331,7 +331,7 @@ describe('image draft rail', () => {
       },
     })
     fireEvent.dragEnter(document.body, { dataTransfer: { types: ['Files'], files: [], dropEffect: 'none' } })
-    expect(view.getByRole('status').textContent).toContain('最多 20 张，每张 5MB')
+    expect(view.getByRole('status').textContent).toContain('图片最多 20 张、每张 5MB；其他文件仅添加引用')
   })
 
   it('announces server attachment rejections as product copy, other codes as developer text', () => {
@@ -352,28 +352,46 @@ describe('image draft rail', () => {
   })
 
   it('shows the blocked overlay and refuses the drop while the composer is locked', () => {
-    const addImages = vi.fn(() => null)
-    const { view } = bench({ addImages, inert: true })
+    const addAttachments = vi.fn(() => null)
+    const { view } = bench({ addAttachments, inert: true })
     const image = new File([Uint8Array.of(1)], 'dropped.png', { type: 'image/png' })
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'copy' }
     fireEvent.dragEnter(document.body, { dataTransfer })
-    expect(view.getByRole('status').textContent).toContain('当前无法添加图片')
+    expect(view.getByRole('status').textContent).toContain('当前无法添加附件')
     fireEvent.dragOver(document.body, { dataTransfer })
     expect(dataTransfer.dropEffect).toBe('none')
     fireEvent.drop(document.body, { dataTransfer })
-    expect(addImages).not.toHaveBeenCalled()
+    expect(addAttachments).not.toHaveBeenCalled()
     expect(view.queryByRole('status')).toBeNull()
   })
 
   it('sends an image-only draft and removes its thumbnail', () => {
     const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
     const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' }
-    const { view, textarea, sink, removeImage } = bench({ attachments: [attachment] })
+    const { view, textarea, sink, removeAttachment } = bench({ attachments: [attachment] })
     expect((view.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false)
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue')
     fireEvent.click(view.getByRole('button', { name: '移除图片 pixel.png' }))
-    expect(removeImage).toHaveBeenCalledWith('draft-1')
+    expect(removeAttachment).toHaveBeenCalledWith('draft-1')
+  })
+
+  it('renders and submits a file-only draft as a removable reference row', () => {
+    const file = new File([Uint8Array.of(1, 2, 3)], 'report.pdf', { type: 'application/pdf' })
+    const attachment = {
+      kind: 'file' as const,
+      id: 'draft-file-1' as DraftAttachmentId,
+      file,
+      reference: 'report.pdf',
+    }
+    const { view, textarea, sink, removeAttachment } = bench({ attachments: [attachment] })
+    expect(view.getByText('report.pdf')).toBeTruthy()
+    expect(view.getByText('application/pdf · 3 B')).toBeTruthy()
+    expect(view.queryByTitle('查看原图')).toBeNull()
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).toHaveBeenCalledWith('', ['draft-file-1'], 'queue')
+    fireEvent.click(view.getByRole('button', { name: '移除文件引用 report.pdf' }))
+    expect(removeAttachment).toHaveBeenCalledWith('draft-file-1')
   })
 
   it('opens the original image on a single click and closes it with Escape', () => {
@@ -386,11 +404,11 @@ describe('image draft rail', () => {
     expect(view.queryByRole('dialog', { name: '原图预览' })).toBeNull()
   })
 
-  it('announces an image-intake rejection as a fading toast, repeatable for the same reason', () => {
+  it('announces an attachment-intake rejection as a fading toast, repeatable for the same reason', () => {
     vi.useFakeTimers()
     try {
-      const addImages = vi.fn(() => '仅支持 PNG、JPG、WebP、GIF 格式的图片')
-      const { view, textarea } = bench({ addImages })
+      const addAttachments = vi.fn(() => '附件添加失败')
+      const { view, textarea } = bench({ addAttachments })
       const paste = () => {
         fireEvent.paste(textarea, {
           clipboardData: {
@@ -400,20 +418,20 @@ describe('image draft rail', () => {
         })
       }
       paste()
-      expect(view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
+      expect(view.getByRole('alert').textContent).toContain('附件添加失败')
       act(() => { vi.advanceTimersByTime(4000) })
       expect(view.queryByRole('alert')).toBeNull()
       // The identical rejection re-announces: the toast is keyed per show.
       paste()
-      expect(view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
+      expect(view.getByRole('alert').textContent).toContain('附件添加失败')
     } finally {
       vi.useRealTimers()
     }
   })
 
   it('announces a rejected drop through the same toast', () => {
-    const addImages = vi.fn(() => '图片读取服务不可用')
-    const { view } = bench({ addImages })
+    const addAttachments = vi.fn(() => '图片读取服务不可用')
+    const { view } = bench({ addAttachments })
     const card = view.container.querySelector('[class*="card"]')!
     const dataTransfer = { types: ['Files'], files: [new File([Uint8Array.of(1)], 'x.png', { type: 'image/png' })], dropEffect: 'none' }
     fireEvent.drop(card, { dataTransfer })
