@@ -20,7 +20,7 @@ import type {
 import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
-import type { CallId, SelectionTarget, ViewTab } from './views.ts'
+import type { CallId, ConversationMessageFocus, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
 export interface ComposerAttachment {
@@ -724,6 +724,10 @@ export interface ChatScrollPosition {
  * outside the view (layout orchestration; the session object layer).
  */
 export interface ChatViewInjected {
+  /** Framework-bound transient request to reveal one full-text search match. */
+  hooks: { messageFocus: ObservableSnapshot<ConversationMessageFocus | null> }
+  /** Consume the exact request after it is revealed or this view is abandoned. */
+  consumeMessageFocus: (requestId: number) => void
   /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
   openDetails: (target: SelectionTarget) => void
   /**
@@ -764,7 +768,7 @@ export interface ChatViewInjected {
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
   & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
-  & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
+  & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'conversation'>
 
 /** Full props of the attachment plugin's composer entry. */
 export type ComposerAttachmentsProps =

@@ -391,6 +391,8 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const scoped = scopedConversation(sessions, sessionId)
       return {
+        hooks: { messageFocus: conversation.messageFocus },
+        consumeMessageFocus: (requestId) => { conversation.consumeMessageFocus(requestId) },
         openDetails: (target) => {
           actions.select(target)
           layout.openDetails()

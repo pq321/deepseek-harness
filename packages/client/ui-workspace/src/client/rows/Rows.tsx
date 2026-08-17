@@ -301,8 +301,8 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
 
 /**
  * One flat search result: title, Workspace context, and optional content
- * excerpt. Search navigation opens the session only; it does not address an
- * event inside the conversation.
+ * excerpt. Content matches carry their exact event sequence into chat
+ * navigation; title-only matches open the session normally.
  * @param props.result - merged local/content search row.
  * @param props.currentId - selected session id.
  * @param props.onOpen - open the selected session.
@@ -312,7 +312,7 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
 export function SearchResultItem({ result, currentId, onOpen, t }: {
   result: SearchResultNode
   currentId: string | undefined
-  onOpen: (id: SearchResultNode['id']) => void
+  onOpen: (id: SearchResultNode['id'], eventSeq?: number) => void
   t: RowTranslate
 }) {
   const selected = result.id === currentId
@@ -324,7 +324,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
       className={clsx(css.searchResultRow, selected && css.selected)}
       role="treeitem"
       aria-selected={selected}
-      onClick={() => { onOpen(result.id) }}
+      onClick={() => { onOpen(result.id, result.eventSeq) }}
     >
       <span className={css.searchResultHeading}>
         <span className={css.slot}>

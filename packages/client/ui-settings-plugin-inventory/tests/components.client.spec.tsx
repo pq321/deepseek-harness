@@ -160,6 +160,32 @@ describe('PluginInventorySettingsTab', () => {
     expect(list).toHaveBeenCalledTimes(2)
   })
 
+  it('updates every supported external package from one action and keeps local links untouched', async () => {
+    const list = vi.fn<PluginInventorySettingsTabInjected['list']>().mockResolvedValue(SNAPSHOT)
+    const checkAndUpdate = vi.fn<PluginInventorySettingsTabInjected['checkAndUpdate']>()
+      .mockResolvedValueOnce({
+        packageName: '@fixture/external-plugin' as never,
+        previousVersion: '1.0.0',
+        installedVersion: '1.1.0',
+        latestVersion: '1.1.0',
+        updated: true,
+        restartRequired: true,
+      })
+      .mockRejectedValueOnce(new Error('GitHub unavailable'))
+    render(<PluginInventorySettingsTab {...props(list, { checkAndUpdate })} />)
+
+    await screen.findByRole('heading', { name: en.installedPackages })
+    fireEvent.click(screen.getByRole('button', { name: en.updateAll }))
+    await waitFor(() => { expect(checkAndUpdate).toHaveBeenCalledTimes(2) })
+    expect(checkAndUpdate.mock.calls.map(([name]) => name)).toEqual([
+      '@fixture/external-plugin',
+      '@fixture/github-plugin',
+    ])
+    expect(checkAndUpdate).not.toHaveBeenCalledWith('@fixture/local-plugin')
+    expect(await screen.findByText(en.updateAllPartial)).toBeTruthy()
+    expect(list).toHaveBeenCalledTimes(2)
+  })
+
   it('live-toggles eligible entries and locks tree carriers', async () => {
     const enabled = { ...SNAPSHOT.entries.find(entry => entry.entryId === 'disabled-entry')!, enabled: true, fiberPhase: 'active' as const }
     const setEnabled = vi.fn<PluginInventorySettingsTabInjected['setEnabled']>().mockResolvedValue({ entry: enabled })

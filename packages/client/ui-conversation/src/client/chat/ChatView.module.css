@@ -50,6 +50,30 @@
   min-width: 0;
 }
 
+.flowItem[data-search-focus='true'] {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent);
+}
+
+@keyframes dsh-search-focus-fade {
+  0%, 72% {
+    background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flowItem[data-search-focus='true'] {
+    animation: dsh-search-focus-fade 2400ms var(--ds-ease-in-out) both;
+  }
+}
+
 /* A keyed renderer may intentionally decline its row after dispatch (the
    completed-turn tail does this when it owns neither actions nor extensions).
    An empty flex item must not consume the column gap. */

@@ -156,8 +156,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  useSession, useSessions, useStore, renderSlot, sessionId, useMessageFocus, consumeMessageFocus,
+  openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -171,7 +171,7 @@ export function ChatView({
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
   const selectedCallId = useStore(s => s.selection?.callId)
-  const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
+  nst [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
   // Close/retry must ignore a settlement that started before the latest
   // gesture; otherwise a cancelled in-flight refusal reopens the dialog.
@@ -205,6 +205,7 @@ export function ChatView({
     setFileOpenError(null)
     setFileOpenBusy(false)
   }, [])
+  const messageFocus = useMessageFocus(focus => focus?.sessionId === sessionId ? focus : null)
 
   const pendingSteering = useMemo(
     () => inbox.filter(item => item.placement === 'steering'),
@@ -233,6 +234,8 @@ export function ChatView({
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
   const followSigRef = useRef<string | null>(null)
+  const focusLoadAttemptRef = useRef<string | null>(null)
+  const [searchFocus, setSearchFocus] = useState<{ key: string; requestId: number } | null>(null)
 
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
@@ -240,6 +243,9 @@ export function ChatView({
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
   const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+  const messageFocusKey = messageFocus === null
+    ? undefined
+    : order.find(key => nodeStore.get(key)?.anchorSeq === messageFocus.eventSeq)
 
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
@@ -396,6 +402,50 @@ export function ChatView({
     if (!loadingOlder) anchorRef.current = null
   }, [loadingOlder])
 
+  // A search navigation owns its request only while this exact Session view
+  // remains mounted. Leaving the Session cancels deferred paging.
+  useEffect(() => {
+    if (messageFocus === null) return
+    return () => { consumeMessageFocus(messageFocus.requestId) }
+  }, [consumeMessageFocus, messageFocus])
+
+  // Search may address an event older than the initial history window. Pull
+  // each unseen page once until the target row enters the Chat projection.
+  useEffect(() => {
+    if (messageFocus === null || openState !== 'open' || loadingOlder || messageFocusKey !== undefined) return
+    if (!hasMore || (firstSeq !== null && firstSeq <= messageFocus.eventSeq)) {
+      consumeMessageFocus(messageFocus.requestId)
+      return
+    }
+    const attempt = `${messageFocus.requestId}:${firstSeq ?? 'empty'}`
+    if (focusLoadAttemptRef.current === attempt) return
+    focusLoadAttemptRef.current = attempt
+    loadOlder()
+  }, [consumeMessageFocus, firstSeq, hasMore, loadOlder, loadingOlder, messageFocus, messageFocusKey, openState])
+
+  useLayoutEffect(() => {
+    if (messageFocus === null || messageFocusKey === undefined || openState !== 'open') return
+    const local = listRef.current
+    if (local === null) return
+    const row = anchorElement(local, messageFocusKey)
+    if (row === null) return
+    setSearchFocus({ key: messageFocusKey, requestId: messageFocus.requestId })
+    if (typeof row.scrollIntoView === 'function') {
+      const reducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      row.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+    }
+    atBottomRef.current = false
+    setAtBottom(false)
+    consumeMessageFocus(messageFocus.requestId)
+  }, [consumeMessageFocus, messageFocus, messageFocusKey, openState])
+
+  useEffect(() => {
+    if (searchFocus === null) return
+    const timer = window.setTimeout(() => { setSearchFocus(null) }, 2400)
+    return () => { window.clearTimeout(timer) }
+  }, [searchFocus])
+
   const loadOlderAnchored = (): void => {
     const local = listRef.current
     /* v8 ignore next -- ref-null guard: the paging button renders inside the list tree. */
@@ -433,6 +483,7 @@ export function ChatView({
             <ChatNodeSeat
               key={nodeKey}
               nodeKey={nodeKey}
+              searchFocused={searchFocus?.key === nodeKey}
               useSession={useSession}
               selectedCallId={selectedCallId}
               cwd={cwd}

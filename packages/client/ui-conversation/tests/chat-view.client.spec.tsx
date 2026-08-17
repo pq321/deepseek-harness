@@ -17,7 +17,8 @@ import {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type {
-  ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, SelectionTarget, UseChatNodeTurnData,
+  ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, ConversationMessageFocus,
+  SelectionTarget, UseChatNodeTurnData,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -162,6 +163,22 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  let messageFocus: ConversationMessageFocus | null = null
+  const focusSubscribers = new Set<() => void>()
+  const focusSource = {
+    getSnapshot: () => messageFocus,
+    subscribe: (listener: () => void) => {
+      focusSubscribers.add(listener)
+      return () => { focusSubscribers.delete(listener) }
+    },
+  }
+  const setMessageFocus = (next: ConversationMessageFocus | null): void => {
+    messageFocus = next
+    for (const listener of focusSubscribers) listener()
+  }
+  const consumeMessageFocus = vi.fn((requestId: number) => {
+    if (messageFocus?.requestId === requestId) setMessageFocus(null)
+  })
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -280,6 +297,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     actions: chat.actions,
     renderSlot,
     SessionProvider: SessionProviderStub,
+    useMessageFocus: bindSnapshotSelector(focusSource),
+    consumeMessageFocus,
     openDetails,
     openFile,
     loadOlder,
@@ -295,7 +314,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, setSelection, toolOwners, setMessageFocus, consumeMessageFocus,
   }
 }
 
@@ -326,6 +345,25 @@ function installScrollMetrics(element: HTMLElement, initialHeight: number, clien
 }
 
 describe('Chat node rendering', () => {
+
+  it('loads older pages for a global-search hit, then centers and highlights the matching message', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    const h = makeHarness({ nodes: [user(20, 'newer')], hasMore: true })
+    h.setMessageFocus({ requestId: 1, sessionId: SID, eventSeq: 5 })
+    const view = render(<h.ChatView {...h.props} />)
+
+    await vi.waitFor(() => { expect(h.loadOlder).toHaveBeenCalledOnce() })
+    expect(h.consumeMessageFocus).not.toHaveBeenCalled()
+
+    act(() => { h.set({ nodes: [user(5, 'needle'), user(20, 'newer')], hasMore: false }) })
+    await vi.waitFor(() => { expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }) })
+    expect(view.container.querySelector('[data-search-focus="true"]')?.textContent).toContain('needle')
+    expect(h.consumeMessageFocus).toHaveBeenCalledWith(1)
+  })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {
     const wrote = (seq: number, callId: string, path: string): ToolResultNode => ({

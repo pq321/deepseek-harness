@@ -66,6 +66,8 @@ export interface SearchResultNode {
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
+  /** Matching message sequence; absent for title- or Workspace-only matches. */
+  eventSeq?: number
   snippet?: string
 }
 
@@ -391,7 +393,7 @@ export function deriveSearchResults(
           ? {}
           : { pendingInteraction: summary.pendingInteraction }),
         completed: summary.completed === true,
-        ...match === undefined ? {} : { snippet: match.snippet },
+        ...match === undefined ? {} : { eventSeq: match.eventSeq, snippet: match.snippet },
       }
     }),
     hasMore: content.hasMore || ordered.length > limit,

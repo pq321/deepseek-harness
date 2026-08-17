@@ -224,6 +224,8 @@ export interface SessionSummary {
 /** One session-content search result; display metadata stays owned by `session.list`. */
 export interface SessionSearchItem {
   sessionId: SessionId
+  /** Sequence of the strongest matching visible message for in-session navigation. */
+  eventSeq: number
   /** Plain-text excerpt around the strongest matching visible message. */
   snippet: string
 }

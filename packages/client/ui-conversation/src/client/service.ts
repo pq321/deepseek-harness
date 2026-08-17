@@ -12,7 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
-import type { ISessions, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, ObservableSnapshot, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
@@ -20,6 +20,7 @@ import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+import type { ConversationMessageFocus } from './contract/views.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -34,6 +35,21 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /** Current global-search navigation request, or null after consumption. */
+  readonly messageFocus: ObservableSnapshot<ConversationMessageFocus | null>
+  /**
+   * Publish a request to open and reveal one matching message.
+   * @param sessionId - Session selected by the global search result.
+   * @param eventSeq - Durable sequence of the matching visible message.
+   */
+  requestMessageFocus(sessionId: SessionId, eventSeq: number): void
+  /**
+   * Consume the named request after revealing it or abandoning its view.
+   * @param requestId - Monotonic identity of the request being consumed.
+   */
+  consumeMessageFocus(requestId: number): void
+  /** Clear any pending message-focus request before ordinary navigation. */
+  clearMessageFocus(): void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -94,6 +110,17 @@ export class ConversationController extends Service implements IConversation {
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  private focusSnapshot: ConversationMessageFocus | null = null
+  private focusRequestId = 0
+  private readonly focusListeners = new Set<() => void>()
+  /** Stable observable consumed by the Chat registration's hook compartment. */
+  readonly messageFocus: ObservableSnapshot<ConversationMessageFocus | null> = {
+    getSnapshot: () => this.focusSnapshot,
+    subscribe: (listener) => {
+      this.focusListeners.add(listener)
+      return () => { this.focusListeners.delete(listener) }
+    },
+  }
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
@@ -118,7 +145,37 @@ export class ConversationController extends Service implements IConversation {
       this.draftAttachments.clear()
       this.imageUrls.clear()
       this.imageGenerations.clear()
+      this.focusSnapshot = null
+      this.focusListeners.clear()
     }, 'conversation attachment URL cache')
+  }
+
+  /** Publish one exact-message navigation request. */
+  requestMessageFocus(sessionId: SessionId, eventSeq: number): void {
+    if (!Number.isSafeInteger(eventSeq) || eventSeq < 0) {
+      throw new Error(`conversation.requestMessageFocus requires a non-negative safe event sequence; received ${eventSeq}`)
+    }
+    this.focusRequestId++
+    this.focusSnapshot = { requestId: this.focusRequestId, sessionId, eventSeq }
+    this.publishMessageFocus()
+  }
+
+  /** Clear the request only when the consumer still owns its identity. */
+  consumeMessageFocus(requestId: number): void {
+    if (this.focusSnapshot?.requestId !== requestId) return
+    this.focusSnapshot = null
+    this.publishMessageFocus()
+  }
+
+  /** Clear any pending exact-message navigation request. */
+  clearMessageFocus(): void {
+    if (this.focusSnapshot === null) return
+    this.focusSnapshot = null
+    this.publishMessageFocus()
+  }
+
+  private publishMessageFocus(): void {
+    for (const listener of this.focusListeners) listener()
   }
 
   /**

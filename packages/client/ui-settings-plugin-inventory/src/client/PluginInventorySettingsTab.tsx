@@ -41,6 +41,9 @@ type ViewState =
   | { readonly status: 'ready'; readonly snapshot: PluginInventorySnapshot }
 
 type ActionState = 'pending' | 'updated' | 'current' | 'failed' | 'parent-disabled'
+type BulkActionState =
+  | { readonly status: 'running'; readonly completed: number; readonly total: number }
+  | { readonly status: 'done'; readonly total: number; readonly updated: number; readonly current: number; readonly failed: number }
 
 const PHASE_KEYS = {
   pending: 'pending',
@@ -140,6 +143,7 @@ export function PluginInventorySettingsTab({
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actions, setActions] = useState<Record<string, ActionState>>({})
+  const [bulkAction, setBulkAction] = useState<BulkActionState | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
 
   useEffect(() => {
@@ -191,6 +195,40 @@ export function PluginInventorySettingsTab({
     }
   }
 
+  const updateAllPackages = async (): Promise<void> => {
+    if (state.status !== 'ready' || bulkAction?.status === 'running') return
+    const candidates = state.snapshot.packages.filter(item => item.updateSupported)
+    if (candidates.length === 0) return
+    setBulkAction({ status: 'running', completed: 0, total: candidates.length })
+    setActions(current => ({
+      ...current,
+      ...Object.fromEntries(candidates.map(item => [`package:${item.packageName}`, 'pending' as const])),
+    }))
+    let updated = 0
+    let current = 0
+    let failed = 0
+    for (const [index, item] of candidates.entries()) {
+      const key = `package:${item.packageName}`
+      try {
+        const result = await checkAndUpdate(item.packageName)
+        const next = result.updated ? 'updated' : 'current'
+        if (result.updated) updated++
+        else current++
+        setActions(actions => ({ ...actions, [key]: next }))
+      } catch {
+        failed++
+        setActions(actions => ({ ...actions, [key]: 'failed' }))
+      }
+      setBulkAction({ status: 'running', completed: index + 1, total: candidates.length })
+    }
+    setBulkAction({ status: 'done', total: candidates.length, updated, current, failed })
+    try {
+      setState({ status: 'ready', snapshot: await list() })
+    } catch {
+      // Per-package outcomes remain authoritative when the final inventory refresh fails.
+    }
+  }
+
   const toggleEntry = async (item: RuntimeEntry): Promise<void> => {
     const key = `entry:${item.entryId}`
     const desired = !item.enabled
@@ -217,6 +255,10 @@ export function PluginInventorySettingsTab({
   }
 
   const total = filteredPackages.length + filteredEntries.length
+  const externalPackageCount = state.status === 'ready'
+    ? state.snapshot.packages.filter(item => item.updateSupported).length
+    : 0
+  const bulkRunning = bulkAction?.status === 'running'
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
@@ -254,9 +296,31 @@ export function PluginInventorySettingsTab({
           {filteredPackages.length > 0 ? (
             <section className={css.group} aria-labelledby={`${catalogId}-packages`}>
               <div className={css.groupHeading}>
-                <h4 id={`${catalogId}-packages`}>{t('installedPackages')}</h4>
-                <span>{filteredPackages.length}</span>
+                <span className={css.groupTitle}>
+                  <h4 id={`${catalogId}-packages`}>{t('installedPackages')}</h4>
+                  <span>{filteredPackages.length}</span>
+                </span>
+                <button
+                  className={css.bulkUpdateButton}
+                  type="button"
+                  disabled={bulkRunning || externalPackageCount === 0}
+                  onClick={() => { void updateAllPackages() }}
+                >
+                  <IconRefreshOutline14 aria-hidden="true" />
+                  {bulkAction?.status === 'running'
+                    ? t('updatingAll', { done: bulkAction.completed, total: bulkAction.total })
+                    : t('updateAll')}
+                </button>
               </div>
+              {bulkAction?.status === 'done' ? (
+                <p
+                  className={css.bulkActionMessage}
+                  data-state={bulkAction.failed > 0 ? 'failed' : 'complete'}
+                  role={bulkAction.failed > 0 ? 'alert' : 'status'}
+                >
+                  {t(bulkAction.failed > 0 ? 'updateAllPartial' : 'updateAllComplete', bulkAction)}
+                </p>
+              ) : null}
               <ul className={css.cards}>
                 {filteredPackages.map((item) => {
                   const key = `package:${item.packageName}`
@@ -297,7 +361,7 @@ export function PluginInventorySettingsTab({
                               <button
                                 className={css.actionButton}
                                 type="button"
-                                disabled={action === 'pending'}
+                                disabled={action === 'pending' || bulkRunning}
                                 onClick={() => { void updatePackage(item) }}
                               >
                                 <IconRefreshOutline14 aria-hidden="true" />

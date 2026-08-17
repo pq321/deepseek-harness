@@ -2300,6 +2300,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, {
           items: matches.slice(0, SESSION_SEARCH_RESULT_LIMIT).map(match => ({
             sessionId: match.sessionId,
+            eventSeq: match.seq,
             snippet: searchSnippet(match.text, match.matchStart, match.matchEnd),
           })),
           hasMore: matches.length > SESSION_SEARCH_RESULT_LIMIT,

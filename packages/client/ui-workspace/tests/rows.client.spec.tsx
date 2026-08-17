@@ -81,6 +81,7 @@ describe('workspace browser rows', () => {
       running: true,
       runningSubagentCount: 0,
       completed: false,
+      eventSeq: 42,
       snippet: 'matching message excerpt',
     }
     render(<SearchResultItem result={result} currentId={result.id} onOpen={onOpen} t={t} />)
@@ -92,7 +93,7 @@ describe('workspace browser rows', () => {
     expect(screen.getByText('进行中')).toBeTruthy()
     expect(row.hasAttribute('draggable')).toBe(false)
     fireEvent.click(row)
-    expect(onOpen).toHaveBeenCalledWith(result.id)
+    expect(onOpen).toHaveBeenCalledWith(result.id, 42)
   })
 
   it.each([
