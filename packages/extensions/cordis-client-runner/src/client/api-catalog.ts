@@ -723,7 +723,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionSearchResultItem',
-    declaration: 'export interface SessionSearchResultItem {\n    sessionId: SessionId;\n    snippet: string;\n}',
+    declaration: 'export interface SessionSearchResultItem {\n    sessionId: SessionId;\n    eventSeq: number;\n    snippet: string;\n}',
   },
   {
     name: 'SessionStandardProps',

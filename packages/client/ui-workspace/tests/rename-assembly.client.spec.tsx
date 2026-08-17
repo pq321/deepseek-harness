@@ -33,6 +33,10 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   const runtime = await SlotTestRuntime.create()
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
+  runtime.provide('conversation', {
+    clearMessageFocus: () => {},
+    requestMessageFocus: () => {},
+  })
   runtime.slots.installLocale(locale)
   return runtime
 }

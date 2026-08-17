@@ -507,7 +507,7 @@ describe('WorkspaceBrowser', () => {
     try {
       const open = vi.fn()
       const searchSessions = vi.fn(async () => ({
-        items: [{ sessionId: sid('body-hit'), snippet: '…the waterfall token appears here…' }],
+        items: [{ sessionId: sid('body-hit'), eventSeq: 17, snippet: '…the waterfall token appears here…' }],
         hasMore: true,
       }))
       mount({
@@ -533,7 +533,7 @@ describe('WorkspaceBrowser', () => {
       expect(screen.getByText('…the waterfall token appears here…')).toBeTruthy()
       expect(screen.getByText('仅显示前 20 条结果，请缩小搜索范围。')).toBeTruthy()
       fireEvent.click(screen.getByRole('treeitem'))
-      expect(open).toHaveBeenCalledWith(sid('body-hit'))
+      expect(open).toHaveBeenCalledWith(sid('body-hit'), 17)
       expect(input.value).toBe('waterfall token')
     } finally {
       vi.useRealTimers()
@@ -593,17 +593,17 @@ describe('WorkspaceBrowser', () => {
     vi.useFakeTimers()
     try {
       let resolveFirst!: (value: {
-        items: { sessionId: SessionId; snippet: string }[]
+        items: { sessionId: SessionId; eventSeq: number; snippet: string }[]
         hasMore: boolean
       }) => void
       const first = new Promise<{
-        items: { sessionId: SessionId; snippet: string }[]
+        items: { sessionId: SessionId; eventSeq: number; snippet: string }[]
         hasMore: boolean
       }>((resolve) => { resolveFirst = resolve })
       const searchSessions = vi.fn((query: string, _signal: AbortSignal) => query === 'first'
         ? first
         : Promise.resolve({
-          items: [{ sessionId: sid('second-hit'), snippet: 'second excerpt' }],
+          items: [{ sessionId: sid('second-hit'), eventSeq: 4, snippet: 'second excerpt' }],
           hasMore: false,
         }))
       mount({
@@ -626,7 +626,7 @@ describe('WorkspaceBrowser', () => {
 
       await act(async () => {
         resolveFirst({
-          items: [{ sessionId: sid('first-hit'), snippet: 'stale excerpt' }],
+          items: [{ sessionId: sid('first-hit'), eventSeq: 2, snippet: 'stale excerpt' }],
           hasMore: false,
         })
         await Promise.resolve()

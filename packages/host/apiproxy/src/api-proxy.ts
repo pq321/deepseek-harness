@@ -2132,6 +2132,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               acceptedIds.add(hit.header.id)
               authorized.push({
                 sessionId: hit.header.id,
+                eventSeq: hit.bestMatch.seq,
                 snippet,
               })
             }

@@ -83,6 +83,7 @@ export const sessionSearchRequestSchema = z.object({
 /** One session.search result. */
 export const sessionSearchItemSchema = z.object({
   sessionId: sessionIdSchema,
+  eventSeq: z.number().int().nonnegative(),
   snippet: z.string().refine(
     snippet => truncateUnicodeCodePoints(
       snippet,

@@ -1,5 +1,7 @@
 /** Shared conversation view, selection, and store-state contracts. */
 
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+
 /** Tool call identity as carried on the wire (branded upstream in connection). */
 export type CallId = string
 
@@ -11,6 +13,16 @@ export interface SelectionTarget { turnSeq: number; stepSeq?: number; callId?: C
  * entry's registration options (label falls back to the entry id).
  */
 export interface ViewTab { id: string; label: string }
+
+/** One transient request to reveal a full-text search match in Chat. */
+export interface ConversationMessageFocus {
+  /** Monotonic identity preventing an old view from consuming a newer request. */
+  readonly requestId: number
+  /** Session selected by the global search result. */
+  readonly sessionId: SessionId
+  /** Durable matching message sequence returned by the Host search index. */
+  readonly eventSeq: number
+}
 
 /**
  * Per-session state shared by conversation, chat-view, and details slots.

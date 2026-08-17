@@ -25,9 +25,11 @@ async function bench() {
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
   const clear = vi.fn()
+  const clearMessageFocus = vi.fn()
+  const requestMessageFocus = vi.fn()
   const search = vi.fn(async () => ({
     ok: true as const,
-    value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },
+    value: { items: [{ sessionId: 'session' as never, eventSeq: 5, snippet: 'match' }], hasMore: false },
   }))
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
@@ -36,11 +38,12 @@ async function bench() {
     create, startSession, rename, insertSessionBefore,
   } as never)
   ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
+  ctx.provide('conversation', { clearMessageFocus, requestMessageFocus } as never)
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
-    insertSessionBefore, open, clear, search, renameSession, binding, fork,
+    insertSessionBefore, open, clear, clearMessageFocus, requestMessageFocus, search, renameSession, binding, fork,
   }
 }
 
@@ -54,7 +57,7 @@ function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
 
 describe('ui-workspace apply', () => {
   it('declares the services it drives', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale', 'conversation'])
   })
 
   it('registers browser and pickers for declarations arriving before or after apply', async () => {
@@ -88,9 +91,12 @@ describe('ui-workspace apply', () => {
     expect(b.startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)
     expect(b.open).toHaveBeenCalledWith('session')
+    expect(b.clearMessageFocus).toHaveBeenCalledOnce()
+    browser.open('session' as never, 5)
+    expect(b.requestMessageFocus).toHaveBeenCalledWith('session', 5)
     const signal = new AbortController().signal
     await expect(browser.searchSessions('match', signal)).resolves.toEqual({
-      items: [{ sessionId: 'session', snippet: 'match' }],
+      items: [{ sessionId: 'session', eventSeq: 5, snippet: 'match' }],
       hasMore: false,
     })
     expect(b.search).toHaveBeenCalledWith('match', signal)

@@ -36,6 +36,8 @@ export type SessionListPhase = 'pending' | 'ready'
 /** Request-local content hit returned to sidebar search consumers. */
 export interface SessionSearchResultItem {
   sessionId: SessionId
+  /** Sequence of the matching visible message used for exact chat navigation. */
+  eventSeq: number
   snippet: string
 }
 

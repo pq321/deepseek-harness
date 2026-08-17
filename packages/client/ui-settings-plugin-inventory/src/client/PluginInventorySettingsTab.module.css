@@ -101,9 +101,17 @@
 
 .groupHeading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 7px;
   padding: 0 2px;
+}
+
+.groupTitle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
 }
 
 .groupHeading h4 {
@@ -118,6 +126,48 @@
   line-height: 17px;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+.bulkUpdateButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 4px 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.bulkUpdateButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.bulkUpdateButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.bulkUpdateButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.bulkActionMessage {
+  margin: -2px 2px 0;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.bulkActionMessage[data-state='failed'] {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .catalogHeading h3 {

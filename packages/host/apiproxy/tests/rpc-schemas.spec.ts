@@ -166,28 +166,28 @@ describe('sessions domain schemas', () => {
     expect(() => sessionSearchRequestSchema.parse({ query: 'bad\0query' })).toThrow(/NUL/)
     expect(() => sessionSearchRequestSchema.parse({ query: 'x'.repeat(501) })).toThrow()
     expect(sessionSearchValueSchema.parse({
-      items: [{ sessionId: 's1', snippet: 'matching text' }],
+      items: [{ sessionId: 's1', eventSeq: 3, snippet: 'matching text' }],
       hasMore: true,
     })).toEqual({
-      items: [{ sessionId: 's1', snippet: 'matching text' }],
+      items: [{ sessionId: 's1', eventSeq: 3, snippet: 'matching text' }],
       hasMore: true,
     })
     expect(sessionSearchValueSchema.parse({
-      items: [{ sessionId: 's1', snippet: '😀'.repeat(240) }],
+      items: [{ sessionId: 's1', eventSeq: 3, snippet: '😀'.repeat(240) }],
       hasMore: false,
     }).items[0]?.snippet).toBe('😀'.repeat(240))
     expect(() => sessionSearchValueSchema.parse({
-      items: [{ sessionId: 's1', snippet: '😀'.repeat(241) }],
+      items: [{ sessionId: 's1', eventSeq: 3, snippet: '😀'.repeat(241) }],
       hasMore: false,
     })).toThrow(/240 Unicode code points/)
     expect(() => sessionSearchValueSchema.parse({
-      items: [{ sessionId: '', snippet: 'matching text' }],
+      items: [{ sessionId: '', eventSeq: 3, snippet: 'matching text' }],
       hasMore: false,
     })).toThrow()
     expect(() => sessionSearchValueSchema.parse({
       items: Array.from(
         { length: 21 },
-        (_, index) => ({ sessionId: `s${index}`, snippet: 'matching text' }),
+        (_, index) => ({ sessionId: `s${index}`, eventSeq: index, snippet: 'matching text' }),
       ),
       hasMore: true,
     })).toThrow()
