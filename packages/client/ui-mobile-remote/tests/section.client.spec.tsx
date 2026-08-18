@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { MobileRemoteSection } from '../src/client/MobileRemoteSection.tsx'
+import { MobileRemoteSection, type MobileRemoteSectionProps } from '../src/client/MobileRemoteSection.tsx'
 import type { MobileRemoteState } from '../src/client/controller.ts'
 import { en, type MobileRemoteKey } from '../src/client/locales.ts'
 
@@ -18,7 +18,7 @@ const READY: MobileRemoteState = {
   busy: null,
 }
 
-function props(state: MobileRemoteState = READY) {
+function props(state: MobileRemoteState = READY): MobileRemoteSectionProps {
   return {
     close: vi.fn(),
     useSessions: vi.fn(),
@@ -29,13 +29,13 @@ function props(state: MobileRemoteState = READY) {
     start: vi.fn(async () => {}),
     disconnect: vi.fn(async () => {}),
     openPairing: vi.fn(),
-  }
+  } as unknown as MobileRemoteSectionProps
 }
 
 describe('MobileRemoteSection', () => {
   it('loads on mount and routes pairing controls', async () => {
     const face = props()
-    render(<MobileRemoteSection {...face as never} />)
+    render(<MobileRemoteSection {...face} />)
     await waitFor(() => { expect(face.load).toHaveBeenCalledOnce() })
     expect(screen.getByText(READY.bridge!.pairingUrl!)).toBeTruthy()
 
@@ -48,13 +48,13 @@ describe('MobileRemoteSection', () => {
 
   it('renders connected, busy, loading, and failure states', () => {
     const connected = props({ ...READY, bridge: { ...READY.bridge!, connected: true }, busy: 'disconnect' })
-    const { rerender } = render(<MobileRemoteSection {...connected as never} />)
+    const { rerender } = render(<MobileRemoteSection {...connected} />)
     expect(screen.getByText('A phone is connected.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Disconnecting…' }).hasAttribute('disabled')).toBe(true)
 
-    rerender(<MobileRemoteSection {...props({ ...READY, status: 'loading', bridge: null }) as never} />)
+    rerender(<MobileRemoteSection {...props({ ...READY, status: 'loading', bridge: null })} />)
     expect(screen.getByText('Loading phone bridge…')).toBeTruthy()
-    rerender(<MobileRemoteSection {...props({ ...READY, status: 'error', bridge: null, error: 'offline' }) as never} />)
+    rerender(<MobileRemoteSection {...props({ ...READY, status: 'error', bridge: null, error: 'offline' })} />)
     expect(screen.getByRole('alert').textContent).toContain('offline')
   })
 })

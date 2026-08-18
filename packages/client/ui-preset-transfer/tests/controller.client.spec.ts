@@ -86,7 +86,7 @@ describe('PresetTransferController', () => {
     const conflict = bench({ previewImport: vi.fn(() => response({
       agentPreset: 'mine', sourceAgentPreset: 'source', fileCount: 1, warnings: [], conflict: true,
     })) })
-    conflict.controller.setFile({ arrayBuffer: async () => new ArrayBuffer(0) })
+    conflict.controller.setFile({ arrayBuffer: async () => new ArrayBuffer(0) } as File)
     conflict.controller.setAgentPreset('mine')
     await conflict.controller.importPreset(() => true, copy)
     expect(conflict.controller.store.getSnapshot().error).toBe('conflict:mine')
