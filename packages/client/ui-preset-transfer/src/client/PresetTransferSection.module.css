@@ -1,0 +1,17 @@
+.section { max-width: 720px; color: var(--dsw-alias-label-primary); display: flex; flex-direction: column; gap: 12px; }
+.title { margin: 0; font-size: 18px; font-weight: 600; }
+.intro { color: var(--dsw-alias-label-tertiary); margin: 0; font-size: 13px; }
+.security { border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); border-radius: 10px; margin: 0; padding: 10px 12px; font-size: 12px; }
+.form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
+.field { min-width: 180px; flex: 1; display: flex; flex-direction: column; gap: 5px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.input { box-sizing: border-box; width: 100%; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px 10px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); font: inherit; }
+.file { min-width: 220px; flex: 1.5; }
+.cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; padding: 10px 12px; }
+.cardMain { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.name { font-weight: 600; }
+.description { color: var(--dsw-alias-label-tertiary); font-size: 12px; overflow-wrap: anywhere; }
+.id { color: var(--dsw-alias-label-dimmed); font: 11px var(--dsw-font-mono, ui-monospace, monospace); }
+.error { color: var(--dsw-alias-state-error-primary); margin: 0; font-size: 12px; }
+.message { color: var(--dsw-alias-state-success-primary, var(--dsw-alias-label-secondary)); margin: 0; font-size: 12px; }
+.empty { color: var(--dsw-alias-label-tertiary); margin: 0; font-size: 13px; }
