@@ -94,6 +94,22 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Optional portable preset packages. Importing a composition is a
+    # deliberate trust decision, so the Host service stays disabled until a
+    # profile overlay or the plugin inventory enables it.
+    - id: preset-transfer
+      name: '@deepseek-ai/dsh-preset-transfer'
+      disabled: true
+
+    # Optional LAN pairing and mobile-control bridge. Disabled by default;
+    # enabling it is an explicit deployment decision because it opens a
+    # private-network listener and creates a phone pairing surface.
+    - id: mobile-remote
+      name: '@deepseek-ai/dsh-host-mobile-remote'
+      disabled: true
+      config:
+        port: 0
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -195,6 +211,13 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
+    # Browser settings surface for the optional mobile bridge. It remains
+    # independently unloadable from the Host service and is disabled by
+    # default with that service.
+    - id: ui-mobile-remote
+      name: '@deepseek-ai/dsh-client-ui-mobile-remote'
+      disabled: true
+
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 
@@ -257,6 +280,11 @@
     # sessions created later. Absent a roster it renders nothing.
     - id: ui-agent-preset
       name: '@deepseek-ai/dsh-client-ui-agent-preset'
+
+    # Browser settings surface for the optional preset-transfer Host service.
+    - id: ui-preset-transfer
+      name: '@deepseek-ai/dsh-client-ui-preset-transfer'
+      disabled: true
 
     # Plugin configuration: the host-plane sections a user owns, as expandable
     # cards. A namespace this deployment does not expose renders nothing.
