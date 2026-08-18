@@ -134,28 +134,33 @@ export interface EscalationRequest {
   requestedMode: string
   /** The model's one-sentence reason, shown verbatim to the user inside the audit reason. */
   justification: string
-  /** The call's effective mode (session override ?? composition default) the request must strictly widen. */
+  /** The call's effective mode (session override ?? composition default); an equal request is idempotent. */
   effectiveMode: SandboxMode
   /** The family's noun for the escalated action in user-facing texts (`command` for bash, `operation` for fs). */
   subject: string
 }
 
 /**
- * Resolve a sandbox-escalation request BEFORE anything executes: check strict
- * widening against the call's effective mode, then resolve the approval
- * channel, then map every outcome — the ordered fail-closed sequence both
- * enforcing families share. Returns the granted mode to stamp onto exactly
- * this call; throws the distinct verbatim text for every other path (a
- * non-widening request, a missing approval service, an agent-less execution,
- * a rejection, a cancellation, an unanswerable ask) — the tool registry turns
- * the throw into the call's isError result, and nothing has run. A
- * non-widening request never prompts a human.
+ * Resolve a sandbox-permission request BEFORE anything executes: accept an
+ * equal-mode request without approval, otherwise check strict widening against
+ * the call's effective mode, then resolve the approval channel and map every
+ * outcome — the ordered fail-closed sequence both enforcing families share.
+ * Returns the current or granted mode to stamp onto exactly this call; throws
+ * the distinct verbatim text for every other path (a narrowing or unknown
+ * request, a missing approval service, an agent-less execution, a rejection,
+ * a cancellation, an unanswerable ask) — the tool registry turns the throw
+ * into the call's isError result, and nothing has run. Equal-mode and rejected
+ * widening requests never prompt a human.
  * @param request - the escalation to judge (see {@link EscalationRequest}).
  * @param approval - the approval ingredients the tool holds (see {@link EscalationApproval}).
  * @returns the granted mode, consumed by the one call that asked.
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
+  // A redundant request for the standing mode grants nothing and needs no
+  // approval. This keeps explicit tool arguments idempotent without widening
+  // the call; narrower and unknown targets still fail below.
+  if (mode === effectiveMode) return effectiveMode
   // Strict widening is an EXECUTION check against the call's effective mode —
   // deliberately not a schema constraint (the enum is the closed target
   // vocabulary; the effective mode is per-call truth).

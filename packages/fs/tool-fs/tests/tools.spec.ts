@@ -875,6 +875,21 @@ describe('sandbox escalation API (write/edit)', () => {
     expect(text(result)).not.toContain('[sandbox:')
   })
 
+  it('an equal-mode request writes without approval under the standing policy', async () => {
+    const { ctx, fs } = await setupConfining({ approval: true })
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve('allowed-once' as const) })
+    const result = await call(ctx, 'write', {
+      file_path: 'a.txt',
+      content: 'x',
+      sandbox_permissions: 'workspace-write',
+      justification: 'the operation explicitly names its standing mode',
+    }, escalationAgent())
+    expect(result.isError).toBe(false)
+    expect(fs.stamped).toEqual([{ mode: 'workspace-write', workspaceRoot: resolve('/session-project') }])
+    expect(prompted).not.toHaveBeenCalled()
+  })
+
   it('an approved escalation stamps the granted mode onto that write', async () => {
     const { ctx, fs } = await setupConfining({ approval: true })
     ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
