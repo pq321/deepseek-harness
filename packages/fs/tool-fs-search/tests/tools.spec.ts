@@ -577,6 +577,45 @@ describe('exit semantics and failure classification', () => {
     expect(text(result)).toContain('IO error')
   })
 
+  it('returns partial glob and grep results when every diagnostic is access denied', async () => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => runResult('visible.ts\n', {
+      exitCode: 2,
+      stderr: { text: 'rg: .codex-tmp/run/.sandbox-secrets: Access is denied. (os error 5)' },
+    })
+    const glob = await call(ctx, 'glob', { pattern: '*.ts' })
+    expect(glob.isError).toBe(false)
+    expect(text(glob)).toBe(
+      'visible.ts\n\nWarning: partial result. ripgrep skipped 1 inaccessible path:\n- .codex-tmp/run/.sandbox-secrets',
+    )
+
+    subprocess.handler = () => runResult(`${matchLine('visible.ts', 4, 'const visible = true')}\n`, {
+      exitCode: 2,
+      stderr: { text: 'rg: locked: Permission denied (os error 13)' },
+    })
+    const grep = await call(ctx, 'grep', { pattern: 'visible' })
+    expect(grep.isError).toBe(false)
+    expect(text(grep)).toContain('visible.ts\nLine 4: const visible = true')
+    expect(text(grep)).toContain('Warning: partial result. ripgrep skipped 1 inaccessible path:\n- locked')
+  })
+
+  it('keeps access denial fatal without usable output or with any mixed diagnostic', async () => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => runResult('', {
+      exitCode: 2,
+      stderr: { text: 'rg: locked: Access is denied. (os error 5)' },
+    })
+    const inaccessibleRoot = await call(ctx, 'glob', { pattern: '*', path: 'locked' })
+    expect(inaccessibleRoot.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+
+    subprocess.handler = () => runResult('visible.ts\n', {
+      exitCode: 2,
+      stderr: { text: 'rg: locked: Access is denied. (os error 5)\nrg: missing: IO error: no such file' },
+    })
+    const mixed = await call(ctx, 'glob', { pattern: '*' })
+    expect(mixed.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+  })
+
   it('a nonzero exit with EMPTY stderr still reports the exit code', async () => {
     const { ctx, subprocess } = await setup()
     subprocess.handler = () => runResult('', { exitCode: 3 })

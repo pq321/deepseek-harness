@@ -15,7 +15,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, SearchResultView, ToolResult } from '@deepseek-ai/dsh-tools'
 import type { SpillRef } from '@deepseek-ai/dsh-spill'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
+import { formatSearchWarnings, runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
+import type { SearchWarning } from './search-core.ts'
 import { globSearchMeta, searchViewFromMeta } from './presentation.ts'
 import { acceptedDirectCallValue } from './direct-call.ts'
 
@@ -331,9 +332,23 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
         properties: {
           root: { type: 'string', required: true },
           paths: { type: 'array', required: true, items: { type: 'string' } },
+          warnings: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                code: { type: 'string', required: true, enum: ['SEARCH_ACCESS_DENIED'] },
+                paths: { type: 'array', required: true, items: { type: 'string' } },
+              },
+            },
+          },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: renderGlobPaths(value.paths, caps, value.root) }],
+      render: (_args, value) => [{
+        type: 'text',
+        text: formatSearchWarnings(renderGlobPaths(value.paths, caps, value.root), value.warnings ?? []),
+      }],
       presentationMeta: (_args, value) => {
         const page = globCardPage(value.paths, caps, value.root)
         return globSearchMeta({ items: page.items, truncated: page.truncated, seen: value.paths.length }, caps.maxMetaBytes)
@@ -351,7 +366,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
         const displayPath = toWorkdirRelative(line, run.workdir)
         all.push(displayPath)
       }
-      return { root, paths: all }
+      return { root, paths: all, ...run.warnings.length > 0 ? { warnings: run.warnings } : {} }
     },
     presentCall: presentGlobCall,
     presentResult: presentGlobResult,
@@ -360,14 +375,21 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
     const decision = await next()
-    const value = acceptedDirectCallValue(ctx, tool, exec, result, decision) as { root: string; paths: string[] } | undefined
+    const value = acceptedDirectCallValue(ctx, tool, exec, result, decision) as {
+      root: string
+      paths: string[]
+      warnings?: SearchWarning[]
+    } | undefined
     if (value === undefined) return decision
     const paths = value.paths
     if (paths.length <= caps.maxResults) return decision
     const spillRef = await trySaveFormattedResult(ctx, exec, 'glob-results.txt', paths.join('\n'))
     return {
       kind: 'accept',
-      content: [{ type: 'text', text: renderGlobPaths(paths, caps, value.root, spillRef) }],
+      content: [{
+        type: 'text',
+        text: formatSearchWarnings(renderGlobPaths(paths, caps, value.root, spillRef), value.warnings ?? []),
+      }],
       ...decision.additionalContexts !== undefined ? { additionalContexts: decision.additionalContexts } : {},
     }
   })

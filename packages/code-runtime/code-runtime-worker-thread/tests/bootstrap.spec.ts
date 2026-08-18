@@ -143,14 +143,22 @@ describe('prepareCompletion', () => {
     expect(prepareCompletion({ a: [1, 'two'] }, 100)).toEqual({ value: encodeWorkerJson({ a: [1, 'two'] }) })
   })
 
-  it('turns every lossy completion shape into invalid-output', () => {
+  it('reports the first lossy completion path and correction', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
     const sparse = Array(2)
     class Exotic { readonly marker = true }
-    for (const value of [{ fn: () => 1 }, -0, Number.POSITIVE_INFINITY, sparse, cyclic, new Exotic()]) {
+    for (const [value, message] of [
+      [{ nested: [{ name: undefined }] }, 'program completion is not lossless JSON: $.nested[0].name is undefined; omit the property or use null'],
+      [{ fn: () => 1 }, 'program completion is not lossless JSON: $.fn is a function; return JSON data instead'],
+      [-0, 'program completion is not lossless JSON: $ is negative zero; use 0'],
+      [Number.POSITIVE_INFINITY, 'program completion is not lossless JSON: $ is Infinity; use a finite number or null'],
+      [sparse, 'program completion is not lossless JSON: $[0] is a missing array element; fill it or use null'],
+      [cyclic, 'program completion is not lossless JSON: $.self creates a cycle; return a tree of JSON values'],
+      [new Exotic(), 'program completion is not lossless JSON: $ uses a non-plain object prototype; return a plain object'],
+    ] as const) {
       expect(prepareCompletion(value, 1_000)).toEqual({
-        error: { kind: 'invalid-output', message: 'program completion must be lossless JSON' },
+        error: { kind: 'invalid-output', message },
       })
     }
   })
@@ -169,10 +177,21 @@ describe('prepareCompletion', () => {
   })
 
   it('contains a getter failure as invalid-output', () => {
-    const value = Object.defineProperty({}, 'x', { enumerable: true, get() { throw new Error('getter exploded') } })
-    expect(prepareCompletion(value, 1_000)).toEqual({
-      error: { kind: 'invalid-output', message: 'program completion must be lossless JSON' },
+    let reads = 0
+    const value = Object.defineProperty({}, 'x', {
+      enumerable: true,
+      get() {
+        reads += 1
+        throw new Error('getter exploded')
+      },
     })
+    expect(prepareCompletion(value, 1_000)).toEqual({
+      error: {
+        kind: 'invalid-output',
+        message: 'program completion is not lossless JSON: $.x could not be read; return stable JSON data properties',
+      },
+    })
+    expect(reads).toBe(1)
   })
 
   it('uses the remaining combined budget for invalid-output diagnostics', () => {
