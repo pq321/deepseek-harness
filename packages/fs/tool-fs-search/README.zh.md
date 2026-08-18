@@ -44,11 +44,11 @@ Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `
 
 ## 两类预算、两类产物
 
-原始 `rg` stdout 与 stderr 是内部传输细节。每次搜索从 subprocess seam 请求 collect 模式预算——`rawOutputMaxBytes` 内的完整 stdout 与 `stderrMaxBytes` 的诊断尾部——两条流都不产生 spill 文件（工具从不读取原始 spill 路径）。如果 seam 仍报告 lossy stdout 读取，搜索会以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败，并要求模型缩小查询；lossy stderr 读取只把诊断摘录标记为 `[stderr truncated]`。成功的 `glob` 在 `{ root, paths }` 中保留所显示的搜索根及所有已取得路径；启用采样时，借助 `root`，Native 渲染器能以显式的相对或绝对搜索路径为根，按该根下的条目分组，而不是按其工作目录前缀分组。`grep` 保留所有已取得的 `{ path, lineNumber, line }`，并将其存入 `{ matches }`。内联条目和每行预览上限只应用于 Native 渲染器。直接接口调用的逻辑结果超过内联上限时，后置策略会尽力通过 `ctx.spillStore.saveText()` 保存完整格式化预览，并只把呈现替换为配置指定的页面与 locator。嵌套 Code 分派会跳过 spill，因为其完整规范值不会进入模型上下文。spill 缺失/失败时保留内联页面，并报告完整结果无法保存，绝不会成为 `isError`。
+原始 `rg` stdout 与 stderr 是内部传输细节。每次搜索从 subprocess seam 请求 collect 模式预算——`rawOutputMaxBytes` 内的完整 stdout 与 `stderrMaxBytes` 的诊断尾部——两条流都不产生 spill 文件（工具从不读取原始 spill 路径）。如果 seam 仍报告 lossy stdout 读取，搜索会以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败，并要求模型缩小查询；lossy stderr 读取只把诊断摘录标记为 `[stderr truncated]`。成功的 `glob` 在 `{ root, paths }` 中保留所显示的搜索根及所有已取得路径；启用采样时，借助 `root`，Native 渲染器能以显式的相对或绝对搜索路径为根，按该根下的条目分组，而不是按其工作目录前缀分组。`grep` 保留所有已取得的 `{ path, lineNumber, line }`，并将其存入 `{ matches }`。当 ripgrep 在产生可用 stdout 后以非零状态退出，且完整 stderr 的每一行都是访问拒绝诊断时，两种值还会携带 `{ warnings: [{ code: "SEARCH_ACCESS_DENIED", paths }] }`；混合诊断、截断诊断、只有根不可访问、语法错误或其他 I/O 失败仍属于错误。内联条目和每行预览上限只应用于 Native 渲染器。直接接口调用的逻辑结果超过内联上限时，后置策略会尽力通过 `ctx.spillStore.saveText()` 保存完整格式化预览，并只把呈现替换为配置指定的页面与 locator。嵌套 Code 分派会跳过 spill，因为其完整规范值不会进入模型上下文。spill 缺失/失败时保留内联页面，并报告完整结果无法保存，绝不会成为 `isError`。
 
 ## 错误
 
-搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒绝正则/glob）、`SEARCH_FAILED`（`rg` 启动失败、目标不可访问、信号终止、`--json` 输出格式错误）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`），只有其他退出值表示失败。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
+搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（ripgrep 拒绝正则/glob）、`SEARCH_FAILED`（`rg` 启动失败、目标不可访问且没有可用部分输出、信号终止、`--json` 输出格式错误）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`）；更高退出值只有在可用 stdout 与纯访问拒绝诊断同时出现时才会被接受，且结果会明确标记为部分结果。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
 
 ## 模型体验
 
@@ -102,7 +102,7 @@ glob 描述声明了配置的超过上限排序方式。生成的 [`glob` 和 `g
 
 #### 模型看到的内容
 
-`glob` 每行返回一个路径；`grep` 在每个路径下分组展示 `Line <line>: <preview>` 匹配。空搜索返回 `No files found` 或 `No matches found`。达到上限的结果以省略计数结尾，并附 spill locator 与后端检索提示，或说明完整结果无法保存。启用 `sampleOverCapGlobResults: true` 时，超过上限的 `glob` 页面按实际搜索根正下方的条目轮转取路径，页脚说明采样依据及其覆盖的顶层条目数；无法覆盖全部条目时，页脚提示模型收窄 `path`。`false` 时页面是按修改时间排序的前部，并保留普通的上限结果页脚。未超过上限的结果原样呈现；扁平采样的结果也保留普通页脚，因为其采样等于按修改时间排序的前部。spill 产物始终持有按修改时间排序的完整列表。
+`glob` 每行返回一个路径；`grep` 在每个路径下分组展示 `Line <line>: <preview>` 匹配。空搜索返回 `No files found` 或 `No matches found`。遇到访问拒绝的部分结果会追加 `Warning: partial result`、被跳过的路径，并携带结构化 `SEARCH_ACCESS_DENIED` 警告。达到上限的结果以省略计数结尾，并附 spill locator 与后端检索提示，或说明完整结果无法保存。启用 `sampleOverCapGlobResults: true` 时，超过上限的 `glob` 页面按实际搜索根正下方的条目轮转取路径，页脚说明采样依据及其覆盖的顶层条目数；无法覆盖全部条目时，页脚提示模型收窄 `path`。`false` 时页面是按修改时间排序的前部，并保留普通的上限结果页脚。未超过上限的结果原样呈现；扁平采样的结果也保留普通页脚，因为其采样等于按修改时间排序的前部。spill 产物始终持有按修改时间排序的完整列表。
 
 #### Token 影响
 

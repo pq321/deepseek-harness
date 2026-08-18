@@ -149,7 +149,10 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
     const { runtime } = await setup()
     const result = await runtime.run({ program: 'return { f: () => 1 }', bindings: [] })
     expect(result.value).toBeUndefined()
-    expect(result.error).toEqual({ kind: 'invalid-output', message: 'program completion must be lossless JSON' })
+    expect(result.error).toEqual({
+      kind: 'invalid-output',
+      message: 'program completion is not lossless JSON: $.f is a function; return JSON data instead',
+    })
   })
 
   it('completes a program that returns nothing with no value at all', async () => {
@@ -653,7 +656,10 @@ describe('WorkerThreadCodeRuntime — hostile programs (real workers)', () => {
     const completion = await runtime.run({ program: `${forgeObject}\nreturn forged`, bindings: [] })
     expect(completion).toEqual({
       logs: [],
-      error: { kind: 'invalid-output', message: 'program completion must be lossless JSON' },
+      error: {
+        kind: 'invalid-output',
+        message: 'program completion is not lossless JSON: $ uses a non-plain object prototype; return a plain object',
+      },
     })
   })
 
@@ -696,6 +702,23 @@ describe('WorkerThreadCodeRuntime — hostile programs (real workers)', () => {
         failure: { typed: true, name: 'ToolCallError', toolName: 'fail', message: 'nope' },
         completion: { ok: true, amount: 42 },
       },
+    })
+  })
+
+  it('keeps invalid-output paths actionable after model code mutates diagnostic globals', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: `
+        Math.min = () => { throw new Error('mutated Math.min') };
+        String.prototype.slice = () => { throw new Error('mutated String.slice') };
+        Reflect.apply = () => { throw new Error('mutated Reflect.apply') };
+        return { nested: [{ value: undefined }] };
+      `,
+      bindings: [],
+    })
+    expect(result.error).toEqual({
+      kind: 'invalid-output',
+      message: 'program completion is not lossless JSON: $.nested[0].value is undefined; omit the property or use null',
     })
   })
 

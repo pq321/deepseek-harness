@@ -17,8 +17,8 @@ import type { GenericCallView, SearchResultView, ToolResult } from '@deepseek-ai
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
 import type { SpillRef } from '@deepseek-ai/dsh-spill'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import type { GrepMatch } from './search-core.ts'
-import { SearchError, previewLine, retainGrepMatches, runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
+import type { GrepMatch, SearchWarning } from './search-core.ts'
+import { SearchError, formatSearchWarnings, previewLine, retainGrepMatches, runRipgrep, toWorkdirRelative, trySaveFormattedResult } from './search-core.ts'
 import { grepSearchMeta, searchViewFromMeta } from './presentation.ts'
 import { acceptedDirectCallValue } from './direct-call.ts'
 
@@ -308,11 +308,25 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
               },
             },
           },
+          warnings: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                code: { type: 'string', required: true, enum: ['SEARCH_ACCESS_DENIED'] },
+                paths: { type: 'array', required: true, items: { type: 'string' } },
+              },
+            },
+          },
         },
       },
       render: (_args, value) => [{
         type: 'text',
-        text: formatRetainedGrep(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes)),
+        text: formatSearchWarnings(
+          formatRetainedGrep(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes)),
+          value.warnings ?? [],
+        ),
       }],
       presentationMeta: (_args, value) =>
         grepSearchMeta(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes), caps.maxMetaBytes),
@@ -331,7 +345,7 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
         }
         all.push(match)
       }
-      return { matches: all }
+      return { matches: all, ...run.warnings.length > 0 ? { warnings: run.warnings } : {} }
     },
     presentCall: presentGrepCall,
     presentResult: presentGrepResult,
@@ -340,7 +354,10 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
     const decision = await next()
-    const value = acceptedDirectCallValue(ctx, tool, exec, result, decision) as { matches: GrepMatch[] } | undefined
+    const value = acceptedDirectCallValue(ctx, tool, exec, result, decision) as {
+      matches: GrepMatch[]
+      warnings?: SearchWarning[]
+    } | undefined
     if (value === undefined) return decision
     const matches = value.matches
     if (matches.length <= caps.maxMatches) return decision
@@ -357,7 +374,10 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
       kind: 'accept',
       content: [{
         type: 'text',
-        text: formatRetainedGrep(retainGrepMatches(matches, caps.maxMatches, caps.maxLineBytes), spillRef),
+        text: formatSearchWarnings(
+          formatRetainedGrep(retainGrepMatches(matches, caps.maxMatches, caps.maxLineBytes), spillRef),
+          value.warnings ?? [],
+        ),
       }],
       ...decision.additionalContexts !== undefined ? { additionalContexts: decision.additionalContexts } : {},
     }

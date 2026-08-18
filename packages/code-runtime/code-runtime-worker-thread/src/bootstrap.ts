@@ -8,11 +8,14 @@
 import { inspect } from 'node:util'
 import type { DoneMessage, ReplyMessage, WorkerBootData, WorkerToHost } from './protocol.ts'
 import { jsonStringBytesUpTo, jsonValueBytesUpTo, truncateJsonStringBytes } from './output-json.ts'
-import { decodeWorkerJson, encodeWorkerJson, snapshotCodeJsonValue } from './worker-json.ts'
+import { decodeWorkerJson, encodeWorkerJson, snapshotCodeJsonValue, snapshotCodeJsonValueWithDiagnostic } from './worker-json.ts'
+import type { CodeJsonPath } from './worker-json.ts'
 
 const CapturedError = Error
 const capturedObjectCreate = Object.create
 const capturedObjectDefineProperty = Object.defineProperty
+const capturedReflectApply = Reflect.apply
+const capturedStringSlice = Reflect.get(String.prototype, 'slice')
 
 /** Define one public binding-error field without consulting mutable globals or descriptor prototypes. */
 function defineBindingErrorField(error: Error, key: string, value: string): void {
@@ -152,6 +155,42 @@ export function captureStreamWrites(logs: LogBuffer, stream: PatchableStream): (
 /** Bounded inspect options: deep enough to be useful, bounded so a pathological value cannot explode the rendering. */
 const INSPECT_OPTIONS = { depth: 4, maxArrayLength: 100, maxStringLength: 10_000 } as const
 
+/** Whether a string can use the concise `.key` JSON-path form. */
+function isIdentifierPathKey(key: string): boolean {
+  if (key.length === 0) return false
+  for (let index = 0; index < key.length; index++) {
+    const char = key[index]
+    const letter = char !== undefined && (char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z')
+    const digit = char !== undefined && char >= '0' && char <= '9'
+    if (!(letter || char === '_' || char === '$' || index > 0 && digit)) return false
+  }
+  return true
+}
+
+/** Render a bounded JSON path without recursively traversing a hostile value. */
+function formatCompletionPath(path: CodeJsonPath): string {
+  let depth = 0
+  for (let cursor: CodeJsonPath = path; cursor.parent !== undefined; cursor = cursor.parent) depth += 1
+  let rendered = '$'
+  const shown = depth < 64 ? depth : 64
+  for (let index = 0; index < shown; index++) {
+    let cursor = path
+    for (let remaining = depth - index - 1; remaining > 0; remaining--) {
+      /* v8 ignore next -- each non-root linked path has the counted parent. */
+      if (cursor.parent === undefined) break
+      cursor = cursor.parent
+    }
+    const segment = cursor.segment
+    if (typeof segment === 'number') rendered += `[${segment}]`
+    else if (typeof segment === 'string' && isIdentifierPathKey(segment)) rendered += `.${segment}`
+    else rendered += `[${inspect(segment, { breakLength: Infinity, maxStringLength: 100 })}]`
+    if (rendered.length > 512) {
+      return `${capturedReflectApply(capturedStringSlice, rendered, [0, 512])}...[path truncated]`
+    }
+  }
+  return shown < depth ? `${rendered}...[path truncated after ${shown} segments]` : rendered
+}
+
 /**
  * Prepare the program's completion value for the done message. Only lossless
  * JSON crosses, and a value that does not fit the remaining combined outer
@@ -169,24 +208,19 @@ export function prepareCompletion(
   maxOutputBytes: number = remainingOutputBytes,
 ): Omit<DoneMessage, 'type'> {
   if (value === undefined) return {}
-  let snapshot: ReturnType<typeof snapshotCodeJsonValue>
-  try {
-    snapshot = snapshotCodeJsonValue(value)
-  } catch {
-    snapshot = undefined
-  }
-  if (snapshot === undefined) {
+  const snapshot = snapshotCodeJsonValueWithDiagnostic(value)
+  if (!snapshot.ok) {
     return prepareFailure(
       'invalid-output',
-      'program completion must be lossless JSON',
+      `program completion is not lossless JSON: ${formatCompletionPath(snapshot.failure.path)} ${snapshot.failure.reason}`,
       remainingOutputBytes,
       maxOutputBytes,
     )
   }
-  if (jsonValueBytesUpTo(snapshot, remainingOutputBytes) === undefined) {
+  if (jsonValueBytesUpTo(snapshot.value, remainingOutputBytes) === undefined) {
     return outputLimit(maxOutputBytes)
   }
-  return { value: encodeWorkerJson(snapshot) }
+  return { value: encodeWorkerJson(snapshot.value) }
 }
 
 /** Build the fixed overflow fragment without carrying rejected variable bytes. */

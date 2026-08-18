@@ -69,8 +69,9 @@ export const SEARCH_META_MAX_BYTES = 65_536
  * `FsErrorCode`) because these tools are spawn-backed discovery, not `ctx.fs`
  * provider operations: `SEARCH_INVALID_PATTERN` — ripgrep rejected the regex or
  * glob; `SEARCH_FAILED` — the search could not run or its output could not be
- * parsed (a failed `rg` launch, inaccessible target, signal kill, malformed
- * `--json`); `SEARCH_RAW_OUTPUT_OVERFLOW` — raw `rg` output exceeded
+ * parsed (a failed `rg` launch, an inaccessible target without usable partial
+ * output, signal kill, malformed `--json`); `SEARCH_RAW_OUTPUT_OVERFLOW` — raw
+ * `rg` output exceeded
  * `rawOutputMaxBytes` or stayed truncated after that requested stdout budget;
  * `SEARCH_ABORTED` — the cooperative tool timeout or caller cancellation cut
  * the search short.
@@ -102,8 +103,18 @@ export interface RipgrepRun {
   stdout: string
   /** True when ripgrep exited 1: a successful search with zero results. */
   noMatches: boolean
+  /** Non-fatal traversal problems that make an otherwise usable result partial. */
+  warnings: SearchWarning[]
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
+}
+
+/** A non-fatal search condition attached to a successful partial result. */
+export interface SearchWarning {
+  /** Stable warning code for callers and renderers. */
+  code: 'SEARCH_ACCESS_DENIED'
+  /** Inaccessible paths reported by ripgrep. */
+  paths: string[]
 }
 
 /**
@@ -127,6 +138,37 @@ function classifyRunFailure(toolName: string, exitCode: number, stderrText: stri
     return new SearchError(`${toolName} pattern rejected by ripgrep: ${stderr}`, 'SEARCH_INVALID_PATTERN')
   }
   return new SearchError(`${toolName} search failed (exit ${exitCode})${stderr.length > 0 ? `: ${stderr}` : ''}`, 'SEARCH_FAILED')
+}
+
+/**
+ * Recognize a complete stderr stream containing only ripgrep access-denied
+ * diagnostics. Any other line, an empty stream, or a truncated tail remains a
+ * hard failure because the omitted text could name a syntax, root, or I/O error.
+ */
+function accessDeniedWarning(stderrText: string, truncated: boolean): SearchWarning | undefined {
+  if (truncated) return undefined
+  const lines = stderrText.trim().split(/\r?\n/).filter(line => line.length > 0)
+  if (lines.length === 0) return undefined
+  const paths: string[] = []
+  for (const line of lines) {
+    const match = /^rg: (.+): (?:permission denied|access is denied\.?) \(os error (?:5|13)\)$/i.exec(line)
+    if (match?.[1] === undefined) return undefined
+    paths.push(match[1])
+  }
+  return { code: 'SEARCH_ACCESS_DENIED', paths }
+}
+
+/**
+ * Append non-fatal search warnings to otherwise successful model-facing text.
+ * @param text - the successful search result text.
+ * @param warnings - structured conditions that made the result partial.
+ * @returns `text` unchanged when complete, otherwise text with a partial-result warning.
+ */
+export function formatSearchWarnings(text: string, warnings: readonly SearchWarning[]): string {
+  if (warnings.length === 0) return text
+  const paths = warnings.flatMap(warning => warning.paths)
+  const noun = paths.length === 1 ? 'path' : 'paths'
+  return `${text}\n\nWarning: partial result. ripgrep skipped ${paths.length} inaccessible ${noun}:\n${paths.map(path => `- ${path}`).join('\n')}`
 }
 
 /**
@@ -192,9 +234,11 @@ export function resolveRgPath(): Promise<string> {
  * seam's diagnostic-tail shape (no spill files): the tools never read a raw
  * spill path, and truncated stdout fails as `SEARCH_RAW_OUTPUT_OVERFLOW`.
  *
- * Exit semantics are tool-owned: exit 0 is success with results, exit 1 is
- * success with zero results (`noMatches`), anything else throws a
- * {@link SearchError} (abort/timeout → `SEARCH_ABORTED`, invalid pattern →
+ * Exit semantics are tool-owned: exit 0 is success with results and exit 1 is
+ * success with zero results (`noMatches`). A higher exit returns a partial
+ * success only when complete usable stdout accompanies exclusively recognized
+ * access-denied diagnostics; otherwise it throws a {@link SearchError}
+ * (abort/timeout → `SEARCH_ABORTED`, invalid pattern →
  * `SEARCH_INVALID_PATTERN`, the rest → `SEARCH_FAILED` /
  * `SEARCH_RAW_OUTPUT_OVERFLOW`). Both launch-time failure domains are
  * classified: a synchronous throw at spawn CREATION (a NUL in argv, an abort
@@ -271,11 +315,14 @@ export async function runRipgrep(
   if (outcome.signal !== null || outcome.exitCode === null) {
     throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? '(unknown)'}`, 'SEARCH_FAILED')
   }
-  if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
-    throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
-  }
   const text = completeStdout(toolName, stdout, rawOutputMaxBytes)
-  return { stdout: text, noMatches: outcome.exitCode === 1, workdir }
+  const warnings: SearchWarning[] = []
+  if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
+    const warning = text.trim().length > 0 ? accessDeniedWarning(stderr.text, stderr.lossy) : undefined
+    if (warning === undefined) throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
+    warnings.push(warning)
+  }
+  return { stdout: text, noMatches: outcome.exitCode === 1, warnings, workdir }
 }
 
 /**

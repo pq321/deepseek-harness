@@ -16,6 +16,7 @@ const intrinsicReflectApply = Reflect.get(Reflect, 'apply') as (
 ) => unknown
 const IntrinsicError = Error
 const IntrinsicSet = Set
+const IntrinsicString = String
 const intrinsicArrayIsArray = Array.isArray
 const intrinsicArrayPrototype = Array.prototype
 const intrinsicNumberIsFinite = Number.isFinite
@@ -132,11 +133,180 @@ type SnapshotDestination =
   | { kind: 'array'; target: CodeJsonValue[]; index: number }
   | { kind: 'object'; target: Record<string, CodeJsonValue>; key: string }
 
+/** One linked segment in the first invalid completion value's JSON path. */
+export interface CodeJsonPath {
+  readonly parent?: CodeJsonPath
+  readonly segment?: string | number
+}
+
+/** Why a completion value could not be represented as lossless JSON. */
+export interface CodeJsonFailure {
+  readonly path: CodeJsonPath
+  readonly reason: string
+  readonly cause?: unknown
+}
+
+/** A detached JSON snapshot or the first value that violates lossless JSON. */
+export type CodeJsonSnapshot =
+  | { readonly ok: true; readonly value: CodeJsonValue }
+  | { readonly ok: false; readonly failure: CodeJsonFailure }
+
 type SnapshotTask =
-  | { kind: 'visit'; value: unknown; destination: SnapshotDestination }
-  | { kind: 'array-item'; source: unknown[]; index: number; target: CodeJsonValue[] }
-  | { kind: 'object-property'; source: Record<string, unknown>; key: string; target: Record<string, CodeJsonValue> }
+  | { kind: 'visit'; value: unknown; destination: SnapshotDestination; path: CodeJsonPath }
+  | { kind: 'array-item'; source: unknown[]; index: number; target: CodeJsonValue[]; path: CodeJsonPath }
+  | { kind: 'object-property'; source: Record<string, unknown>; key: string; target: Record<string, CodeJsonValue>; path: CodeJsonPath }
   | { kind: 'leave'; source: object }
+
+/** Create one validation failure without consulting model-owned values. */
+function invalidSnapshot(path: CodeJsonPath, reason: string): CodeJsonSnapshot {
+  return { ok: false, failure: { path, reason } }
+}
+
+/**
+ * Validate and detach one worker-boundary value while retaining the first
+ * lossless-JSON violation for a model-actionable completion diagnostic.
+ * Traversal and paths are iterative/linked, so nesting does not consume the
+ * JavaScript call stack or duplicate full path strings at every level.
+ *
+ * @param value - the candidate completion value.
+ * @returns the detached snapshot or the first invalid path and reason.
+ */
+export function snapshotCodeJsonValueWithDiagnostic(value: unknown): CodeJsonSnapshot {
+  const active = new IntrinsicSet<object>()
+  const rootPath: CodeJsonPath = {}
+  let root: CodeJsonValue | undefined
+  let currentPath = rootPath
+  const assign = (destination: SnapshotDestination, item: CodeJsonValue): void => {
+    if (destination.kind === 'root') {
+      root = item
+    } else if (destination.kind === 'array') {
+      defineEnumerableDataProperty(destination.target, destination.index, item)
+    } else {
+      defineEnumerableDataProperty(destination.target, destination.key, item)
+    }
+  }
+
+  const tasks: SnapshotTask[] = [{ kind: 'visit', value, destination: { kind: 'root' }, path: rootPath }]
+  try {
+    for (let task = takeLast(tasks); task !== undefined; task = takeLast(tasks)) {
+      if (task.kind === 'leave') {
+        setDelete(active, task.source)
+        continue
+      }
+      currentPath = task.path
+      if (task.kind === 'array-item') {
+        if (!intrinsicObjectHasOwn(task.source, task.index)) {
+          return invalidSnapshot(task.path, 'is a missing array element; fill it or use null')
+        }
+        append(tasks, {
+          kind: 'visit',
+          value: task.source[task.index],
+          destination: { kind: 'array', target: task.target, index: task.index },
+          path: task.path,
+        })
+        continue
+      }
+      if (task.kind === 'object-property') {
+        append(tasks, {
+          kind: 'visit',
+          value: task.source[task.key],
+          destination: { kind: 'object', target: task.target, key: task.key },
+          path: task.path,
+        })
+        continue
+      }
+
+      const candidate = task.value
+      if (candidate === null) {
+        assign(task.destination, null)
+        continue
+      }
+      if (typeof candidate === 'boolean' || typeof candidate === 'string') {
+        assign(task.destination, candidate)
+        continue
+      }
+      if (typeof candidate === 'number') {
+        if (!intrinsicNumberIsFinite(candidate)) {
+          return invalidSnapshot(task.path, `is ${IntrinsicString(candidate)}; use a finite number or null`)
+        }
+        if (intrinsicObjectIs(candidate, -0)) return invalidSnapshot(task.path, 'is negative zero; use 0')
+        assign(task.destination, candidate)
+        continue
+      }
+      if (candidate === undefined) return invalidSnapshot(task.path, 'is undefined; omit the property or use null')
+      if (typeof candidate === 'bigint') return invalidSnapshot(task.path, 'is a bigint; convert it to a number or string')
+      if (typeof candidate === 'function') return invalidSnapshot(task.path, 'is a function; return JSON data instead')
+      if (typeof candidate === 'symbol') return invalidSnapshot(task.path, 'is a symbol; convert it to a string or omit it')
+      if (typeof candidate !== 'object') return invalidSnapshot(task.path, 'is not a JSON value')
+      if (setHas(active, candidate)) return invalidSnapshot(task.path, 'creates a cycle; return a tree of JSON values')
+
+      if (intrinsicArrayIsArray(candidate)) {
+        if (!hasPlainArrayPrototype(candidate)) {
+          return invalidSnapshot(task.path, 'uses a non-plain array prototype; return a plain array')
+        }
+        const length = candidate.length
+        const ownKeys = intrinsicReflectOwnKeys(candidate)
+        for (let index = 0; index < length; index++) {
+          if (!intrinsicObjectHasOwn(candidate, index)) {
+            return invalidSnapshot({ parent: task.path, segment: index }, 'is a missing array element; fill it or use null')
+          }
+        }
+        if (ownKeys.length !== length + 1) {
+          return invalidSnapshot(task.path, 'has non-index properties; return a dense array without extra properties')
+        }
+        const target: CodeJsonValue[] = []
+        assign(task.destination, target)
+        setAdd(active, candidate)
+        append(tasks, { kind: 'leave', source: candidate })
+        for (let index = length - 1; index >= 0; index--) {
+          append(tasks, {
+            kind: 'array-item',
+            source: candidate,
+            index,
+            target,
+            path: { parent: task.path, segment: index },
+          })
+        }
+        continue
+      }
+
+      if (!hasPlainObjectPrototype(candidate)) {
+        return invalidSnapshot(task.path, 'uses a non-plain object prototype; return a plain object')
+      }
+      const ownKeys = intrinsicReflectOwnKeys(candidate)
+      const keys: string[] = []
+      for (let index = 0; index < ownKeys.length; index++) {
+        const key = ownKeys[index]
+        if (typeof key !== 'string' || !intrinsicReflectApply(intrinsicObjectPropertyIsEnumerable, candidate, [key])) {
+          return invalidSnapshot(task.path, 'has symbol or non-enumerable properties; return an object with enumerable string keys only')
+        }
+        append(keys, key)
+      }
+      const target: Record<string, CodeJsonValue> = {}
+      assign(task.destination, target)
+      setAdd(active, candidate)
+      append(tasks, { kind: 'leave', source: candidate })
+      for (let index = keys.length - 1; index >= 0; index--) {
+        const key = keys[index]
+        /* v8 ignore next -- the loop is bounded by the captured key count. */
+        if (key === undefined) return invalidSnapshot(task.path, 'has an unreadable object key')
+        append(tasks, {
+          kind: 'object-property',
+          source: candidate as Record<string, unknown>,
+          key,
+          target,
+          path: { parent: task.path, segment: key },
+        })
+      }
+    }
+  } catch (cause: unknown) {
+    return { ok: false, failure: { path: currentPath, reason: 'could not be read; return stable JSON data properties', cause } }
+  }
+  /* v8 ignore next -- every valid root assigns exactly once. */
+  return root === undefined
+    ? invalidSnapshot(rootPath, 'is undefined; return a JSON value')
+    : { ok: true, value: root }
+}
 
 /**
  * Validate and detach one worker-boundary value without loading another
@@ -148,88 +318,10 @@ type SnapshotTask =
  * @returns a detached lossless-JSON snapshot, or `undefined` when invalid.
  */
 export function snapshotCodeJsonValue(value: unknown): CodeJsonValue | undefined {
-  const active = new IntrinsicSet<object>()
-  let root: CodeJsonValue | undefined
-  const assign = (destination: SnapshotDestination, item: CodeJsonValue): void => {
-    if (destination.kind === 'root') {
-      root = item
-    } else if (destination.kind === 'array') {
-      defineEnumerableDataProperty(destination.target, destination.index, item)
-    } else {
-      defineEnumerableDataProperty(destination.target, destination.key, item)
-    }
-  }
-
-  const tasks: SnapshotTask[] = [{ kind: 'visit', value, destination: { kind: 'root' } }]
-  for (let task = takeLast(tasks); task !== undefined; task = takeLast(tasks)) {
-    if (task.kind === 'leave') {
-      setDelete(active, task.source)
-      continue
-    }
-    if (task.kind === 'array-item') {
-      if (!intrinsicObjectHasOwn(task.source, task.index)) return undefined
-      append(tasks, {
-        kind: 'visit',
-        value: task.source[task.index],
-        destination: { kind: 'array', target: task.target, index: task.index },
-      })
-      continue
-    }
-    if (task.kind === 'object-property') {
-      append(tasks, {
-        kind: 'visit',
-        value: task.source[task.key],
-        destination: { kind: 'object', target: task.target, key: task.key },
-      })
-      continue
-    }
-
-    const candidate = task.value
-    if (candidate === null) {
-      assign(task.destination, null)
-      continue
-    }
-    if (typeof candidate === 'boolean' || typeof candidate === 'string') {
-      assign(task.destination, candidate)
-      continue
-    }
-    if (typeof candidate === 'number') {
-      if (!intrinsicNumberIsFinite(candidate) || intrinsicObjectIs(candidate, -0)) return undefined
-      assign(task.destination, candidate)
-      continue
-    }
-    if (typeof candidate !== 'object') return undefined
-    if (setHas(active, candidate)) return undefined
-
-    if (intrinsicArrayIsArray(candidate)) {
-      if (!hasPlainArrayPrototype(candidate)) return undefined
-      const length = candidate.length
-      if (intrinsicReflectOwnKeys(candidate).length !== length + 1) return undefined
-      const target: CodeJsonValue[] = []
-      assign(task.destination, target)
-      setAdd(active, candidate)
-      append(tasks, { kind: 'leave', source: candidate })
-      for (let index = length - 1; index >= 0; index--) {
-        append(tasks, { kind: 'array-item', source: candidate, index, target })
-      }
-      continue
-    }
-
-    if (!hasPlainObjectPrototype(candidate)) return undefined
-    const keys = enumerableStringKeys(candidate)
-    if (keys === undefined) return undefined
-    const target: Record<string, CodeJsonValue> = {}
-    assign(task.destination, target)
-    setAdd(active, candidate)
-    append(tasks, { kind: 'leave', source: candidate })
-    for (let index = keys.length - 1; index >= 0; index--) {
-      const key = keys[index]
-      /* v8 ignore next -- the loop is bounded by the captured key count. */
-      if (key === undefined) return undefined
-      append(tasks, { kind: 'object-property', source: candidate as Record<string, unknown>, key, target })
-    }
-  }
-  return root
+  const result = snapshotCodeJsonValueWithDiagnostic(value)
+  if (result.ok) return result.value
+  if ('cause' in result.failure) throw result.failure.cause
+  return undefined
 }
 
 interface ArrayWireToken {
