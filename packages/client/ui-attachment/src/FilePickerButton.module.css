@@ -1,0 +1,77 @@
+/**
+ * FilePickerButton styles — responsive across desktop and mobile.
+ */
+
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dsw-space-2);
+  padding: var(--dsw-space-2) var(--dsw-space-3);
+  background: var(--dsw-surface-3);
+  border: 1px solid var(--dsw-border-subtle);
+  border-radius: var(--dsw-radius-full);
+  color: var(--dsw-text-secondary);
+  font-size: var(--dsw-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--dsw-surface-4);
+  color: var(--dsw-text-primary);
+  border-color: var(--dsw-border);
+}
+
+.button:active:not(:disabled) {
+  background: var(--dsw-surface-5);
+  transform: scale(0.98);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+/* Mobile optimization: larger touch target, hide label on narrow screens */
+@media (max-width: 720px) {
+  .button {
+    padding: var(--dsw-space-2-5);
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  
+  .label {
+    display: none;
+  }
+  
+  .icon {
+    width: 20px;
+    height: 20px;
+  }
+}

@@ -1,4 +1,15 @@
-.rail {
-  min-width: 0;
+/**
+ * ComposerAttachments container — button + rail layout.
+ */
+
+.container {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dsw-space-3);
   padding: 4px 12px 0;
+}
+
+.rail {
+  flex: 1;
+  min-width: 0;
 }

@@ -6,6 +6,7 @@ import { AttachmentRail } from '../AttachmentRail.tsx'
 import type { AttachmentRailItem } from '../AttachmentRail.tsx'
 import { DropOverlay } from '../DropOverlay.tsx'
 import { ImageLightbox } from '../ImageLightbox.tsx'
+import { FilePickerButton } from '../FilePickerButton.tsx'
 import { attachmentRailLabels, dropOverlayLabels, lightboxLabels } from './labels.ts'
 import css from './ComposerAttachments.module.css'
 
@@ -94,16 +95,24 @@ export function ComposerAttachments({
           labels={dropOverlayLabels(t, canAcceptDrop, dropLimits)}
         />
       )}
-      {railItems.length > 0 && (
-        <div className={css.rail}>
-          <AttachmentRail
-            items={railItems}
-            labels={attachmentRailLabels(t)}
-            onOpen={(item) => { setPreview(item.attachment) }}
-            onRemove={(item) => { onRemoveImage(item.attachment.id) }}
-          />
-        </div>
-      )}
+      <div className={css.container}>
+        <FilePickerButton
+          disabled={!canAcceptDrop}
+          onFilesSelected={onAddImages}
+          label={t('image.addFiles')}
+          tooltip={t('image.addFilesTooltip')}
+        />
+        {railItems.length > 0 && (
+          <div className={css.rail}>
+            <AttachmentRail
+              items={railItems}
+              labels={attachmentRailLabels(t)}
+              onOpen={(item) => { setPreview(item.attachment) }}
+              onRemove={(item) => { onRemoveImage(item.attachment.id) }}
+            />
+          </div>
+        )}
+      </div>
       {preview !== null && (
         <ImageLightbox
           src={preview.previewUrl}
