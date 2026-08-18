@@ -78,6 +78,9 @@ const SESSION_SEARCH_QUERY_MAX_CHARS = 500
 export const sessionSearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(SESSION_SEARCH_QUERY_MAX_CHARS)
     .refine(query => !query.includes('\0'), { message: 'search query must not contain NUL' }),
+  matchCase: z.boolean().optional(),
+  matchWholeWord: z.boolean().optional(),
+  useRegularExpression: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.search'>>>
 
 /** One session.search result. */

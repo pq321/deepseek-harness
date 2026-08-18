@@ -53,8 +53,8 @@ export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'conversatio
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
 
-  const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
-    const result = await ctx.sessions.search(query, signal)
+  const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, options, signal) => {
+    const result = await ctx.sessions.search(query, signal, options)
     if (!result.ok) throw new Error(result.error.message)
     return result.value
   }

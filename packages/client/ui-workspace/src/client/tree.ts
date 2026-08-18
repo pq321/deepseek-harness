@@ -5,7 +5,7 @@
  */
 import {
   indexSubagentDescendants, type PendingInteractionStatus, type SessionId, type SessionListState,
-  type SessionSearchResultItem, type SessionSummary, type SubagentDescendantSummary,
+  type SessionSearchOptions, type SessionSearchResultItem, type SessionSummary, type SubagentDescendantSummary,
   type WorkspaceId, type WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
@@ -318,6 +318,7 @@ export interface RelativeTime {
  * @param archivedSessionIds - registry-global archive set (members never match).
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param options - case, whole-word, and regular-expression matching modes.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(
@@ -327,8 +328,13 @@ export function deriveSearchResults(
   archivedSessionIds: readonly SessionId[],
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  options: SessionSearchOptions = {
+    matchCase: false,
+    matchWholeWord: false,
+    useRegularExpression: false,
+  },
 ): SearchResultSet {
-  const q = query.trim().toLowerCase()
+  const q = query.trim()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
@@ -353,8 +359,8 @@ export function deriveSearchResults(
     // localized, so matching it would tie search to one language).
     if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived)) continue
     if (
-      sessionTitle(summary).toLowerCase().includes(q)
-      || labelOf(summary).toLowerCase().includes(q)
+      matchesSearchText(sessionTitle(summary), q, options)
+      || matchesSearchText(labelOf(summary), q, options)
     ) {
       local.push(summary)
     }
@@ -391,6 +397,20 @@ export function deriveSearchResults(
       }
     }),
     hasMore: content.hasMore || ordered.length > limit,
+  }
+}
+
+function matchesSearchText(text: string, query: string, options: SessionSearchOptions): boolean {
+  const source = options.useRegularExpression
+    ? query
+    : query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const bounded = options.matchWholeWord
+    ? `(?<![\\p{L}\\p{N}\\p{M}_])(?:${source})(?![\\p{L}\\p{N}\\p{M}_])`
+    : source
+  try {
+    return new RegExp(bounded, `u${options.matchCase ? '' : 'i'}`).test(text)
+  } catch {
+    return false
   }
 }
 

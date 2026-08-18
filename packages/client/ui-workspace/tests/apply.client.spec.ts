@@ -95,11 +95,12 @@ describe('ui-workspace apply', () => {
     browser.open('session' as never, 5)
     expect(b.requestMessageFocus).toHaveBeenCalledWith('session', 5)
     const signal = new AbortController().signal
-    await expect(browser.searchSessions('match', signal)).resolves.toEqual({
+    const options = { matchCase: false, matchWholeWord: false, useRegularExpression: false }
+    await expect(browser.searchSessions('match', options, signal)).resolves.toEqual({
       items: [{ sessionId: 'session', eventSeq: 5, snippet: 'match' }],
       hasMore: false,
     })
-    expect(b.search).toHaveBeenCalledWith('match', signal)
+    expect(b.search).toHaveBeenCalledWith('match', signal, options)
     expect(browser.searchResultLimit).toBe(20)
     await browser.renameSession('session' as never, 'renamed session')
     expect(b.binding).toHaveBeenCalledWith('session')
@@ -155,7 +156,11 @@ describe('ui-workspace apply', () => {
     declare(b.slots, 'sidebar.workspaces')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
-    await expect(browser.searchSessions('needle', new AbortController().signal))
+    await expect(browser.searchSessions(
+      'needle',
+      { matchCase: false, matchWholeWord: false, useRegularExpression: false },
+      new AbortController().signal,
+    ))
       .rejects.toThrow('index unavailable')
   })
 

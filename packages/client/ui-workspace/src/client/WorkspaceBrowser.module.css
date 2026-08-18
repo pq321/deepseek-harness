@@ -219,6 +219,37 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.searchOptions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.searchOptionButton {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: 500 11px/24px ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.searchOptionButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.searchOptionButtonActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
 .clearButton {
   flex: none;
   display: inline-flex;

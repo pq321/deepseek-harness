@@ -2073,6 +2073,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             try {
               page = await sessionQuery.searchSessions({
                 query: request.payload.query,
+                ...(request.payload.matchCase === undefined ? {} : { matchCase: request.payload.matchCase }),
+                ...(request.payload.matchWholeWord === undefined
+                  ? {}
+                  : { matchWholeWord: request.payload.matchWholeWord }),
+                ...(request.payload.useRegularExpression === undefined
+                  ? {}
+                  : { useRegularExpression: request.payload.useRegularExpression }),
                 eventFilters: [
                   { kind: 'type', values: ['user/message', 'assistant/message'] },
                   { kind: 'surface', values: ['current'] },

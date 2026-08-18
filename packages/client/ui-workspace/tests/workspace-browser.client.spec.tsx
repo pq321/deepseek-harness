@@ -463,12 +463,11 @@ describe('WorkspaceBrowser', () => {
       const resultTree = screen.getByRole('tree', { name: '搜索结果' })
       expect(screen.getByText('Needle row')).toBeTruthy()
       expect(screen.queryByText('Other row')).toBeNull()
-      const status = screen.getByRole('status')
-      expect(status.textContent).toBe('正在搜索会话历史…')
-      expect(resultTree.contains(status)).toBe(false)
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(resultTree).toBeTruthy()
 
       fireEvent.change(input, { target: { value: 'zzz' } })
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
       expect(screen.getByText('无匹配会话')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
       expect(input.value).toBe('')
@@ -522,12 +521,16 @@ describe('WorkspaceBrowser', () => {
       })
       const input = screen.getByPlaceholderText<HTMLInputElement>('搜索会话…')
       fireEvent.change(input, { target: { value: 'waterfall token' } })
-      expect(screen.getByText('正在搜索会话历史…')).toBeTruthy()
+      expect(screen.queryByText('正在搜索会话历史…')).toBeNull()
       expect(screen.queryByText('Research notes')).toBeNull()
 
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
 
-      expect(searchSessions).toHaveBeenCalledWith('waterfall token', expect.any(AbortSignal))
+      expect(searchSessions).toHaveBeenCalledWith(
+        'waterfall token',
+        { matchCase: false, matchWholeWord: false, useRegularExpression: false },
+        expect.any(AbortSignal),
+      )
       expect(screen.getByText('Research notes')).toBeTruthy()
       expect(screen.getByText('Research Workspace')).toBeTruthy()
       expect(screen.getByText('…the waterfall token appears here…')).toBeTruthy()
@@ -535,6 +538,34 @@ describe('WorkspaceBrowser', () => {
       fireEvent.click(screen.getByRole('treeitem'))
       expect(open).toHaveBeenCalledWith(sid('body-hit'), 17)
       expect(input.value).toBe('waterfall token')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends VS Code-style search options and rejects an invalid regular expression locally', async () => {
+    vi.useFakeTimers()
+    try {
+      const searchSessions = vi.fn(async () => ({ items: [], hasMore: false }))
+      mount({ searchSessions })
+      fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+      fireEvent.click(screen.getByRole('button', { name: '区分大小写' }))
+      fireEvent.click(screen.getByRole('button', { name: '全字匹配' }))
+      fireEvent.click(screen.getByRole('button', { name: '使用正则表达式' }))
+      expect(screen.getByRole('button', { name: '区分大小写' }).getAttribute('aria-pressed')).toBe('true')
+      const input = screen.getByPlaceholderText<HTMLInputElement>('搜索会话…')
+      fireEvent.change(input, { target: { value: 'Case.*Token' } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+      expect(searchSessions).toHaveBeenCalledWith(
+        'Case.*Token',
+        { matchCase: true, matchWholeWord: true, useRegularExpression: true },
+        expect.any(AbortSignal),
+      )
+
+      fireEvent.change(input, { target: { value: '[bad' } })
+      expect(screen.getByText('正则表达式无效')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+      expect(searchSessions).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }
@@ -557,9 +588,13 @@ describe('WorkspaceBrowser', () => {
       expect(input.value).toBe(expected)
       expect(input.value.length).toBe(499)
       expect(input.value).not.toContain('\0')
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
       expect(searchSessions).toHaveBeenCalledOnce()
-      expect(searchSessions).toHaveBeenCalledWith(expected, expect.any(AbortSignal))
+      expect(searchSessions).toHaveBeenCalledWith(
+        expected,
+        { matchCase: false, matchWholeWord: false, useRegularExpression: false },
+        expect.any(AbortSignal),
+      )
     } finally {
       vi.useRealTimers()
     }
@@ -580,7 +615,7 @@ describe('WorkspaceBrowser', () => {
         target: { value: 'needle' },
       })
       expect(screen.getByText('Needle title')).toBeTruthy()
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
       expect(screen.getByText('Needle title')).toBeTruthy()
       expect(screen.getByText('内容搜索暂不可用，仅显示名称匹配。')).toBeTruthy()
       expect(screen.queryByText('无匹配会话')).toBeNull()
@@ -600,7 +635,7 @@ describe('WorkspaceBrowser', () => {
         items: { sessionId: SessionId; eventSeq: number; snippet: string }[]
         hasMore: boolean
       }>((resolve) => { resolveFirst = resolve })
-      const searchSessions = vi.fn((query: string, _signal: AbortSignal) => query === 'first'
+      const searchSessions = vi.fn((query: string, _options: unknown, _signal: AbortSignal) => query === 'first'
         ? first
         : Promise.resolve({
           items: [{ sessionId: sid('second-hit'), eventSeq: 4, snippet: 'second excerpt' }],
@@ -615,13 +650,13 @@ describe('WorkspaceBrowser', () => {
       })
       const input = screen.getByPlaceholderText('搜索会话…')
       fireEvent.change(input, { target: { value: 'first' } })
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
-      const firstSignal = searchSessions.mock.calls[0]?.[1] as AbortSignal
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+      const firstSignal = searchSessions.mock.calls[0]?.[2] as AbortSignal
       expect(firstSignal.aborted).toBe(false)
 
       fireEvent.change(input, { target: { value: 'second' } })
       expect(firstSignal.aborted).toBe(true)
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
       expect(screen.getByText('Fresh result')).toBeTruthy()
 
       await act(async () => {
@@ -649,7 +684,7 @@ describe('WorkspaceBrowser', () => {
       mount({ searchSessions })
       const input = screen.getByPlaceholderText('搜索会话…')
       fireEvent.change(input, { target: { value: 'first' } })
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
 
       fireEvent.change(input, { target: { value: 'second' } })
       await act(async () => {
@@ -662,18 +697,19 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
-  it('shows the no-sessions empty state in both modes and resolves an empty search', async () => {
+  it('keeps short queries local without scanning Host content', async () => {
     vi.useFakeTimers()
     try {
-      const b = mount()
+      const searchSessions = vi.fn(async () => ({ items: [], hasMore: false }))
+      const b = mount({ searchSessions })
       expect(screen.getByText('暂无会话')).toBeTruthy()
       b.store.actions.setGroupBy('flat')
       rerender(b, {})
       expect(screen.getByText('暂无会话')).toBeTruthy()
       fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'x' } })
-      expect(screen.getByText('正在搜索会话历史…')).toBeTruthy()
-      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
-      expect(screen.getByText('无匹配会话')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+      expect(searchSessions).not.toHaveBeenCalled()
+      expect(screen.queryByText('正在搜索会话历史…')).toBeNull()
     } finally {
       vi.useRealTimers()
     }

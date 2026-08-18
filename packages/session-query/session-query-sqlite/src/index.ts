@@ -5,7 +5,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite'
 import { Context, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
@@ -47,6 +47,7 @@ import {
   assertPortableBindingCount,
   buildEventWhere,
   buildSessionWhere,
+  highlightSearchText,
   makeSnippet,
   normalizeEventRequest,
   normalizeSessionRequest,
@@ -347,6 +348,23 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
 
   private async _open(): Promise<void> {
     this._db = await openSearchDatabase(this.config.path, this.config.journalMode)
+    this._db.function('dsh_search_highlight', { deterministic: true }, (
+      text: SQLOutputValue,
+      query: SQLOutputValue,
+      matchCase: SQLOutputValue,
+      matchWholeWord: SQLOutputValue,
+      useRegularExpression: SQLOutputValue,
+    ) => {
+      if (typeof text !== 'string' || typeof query !== 'string') {
+        throw new Error('session-search matcher requires text arguments')
+      }
+      return highlightSearchText(text, {
+        query,
+        matchCase: matchCase === 1,
+        matchWholeWord: matchWholeWord === 1,
+        useRegularExpression: useRegularExpression === 1,
+      })
+    })
     const state = this._db.prepare(
       'SELECT global_generation FROM search_state WHERE singleton = 1',
     ).get() as { global_generation: number }
@@ -635,13 +653,13 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     offset: number,
     persistenceBinding: PersistenceBinding,
   ): SearchRow[] {
-    const selected = selectedDocumentsSql()
+    const selected = selectedDocumentsSql(request, persistenceBinding.service !== undefined)
     const sessionWhere = buildSessionWhere(request.sessionFilters)
     const eventWhere = buildEventWhere(request.eventFilters)
     assertFts5OuterPredicateCount(sessionWhere.predicateCount + eventWhere.predicateCount)
     const where = [sessionWhere.sql, eventWhere.sql].filter(Boolean).join(' AND ')
     const bindings = [
-      ...selectedDocumentsParams(request.query, persistenceBinding.service !== undefined),
+      ...selected.params,
       ...sessionWhere.params,
       ...eventWhere.params,
       request.limit + 1,
@@ -674,12 +692,12 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     offset: number,
     persistenceBinding: PersistenceBinding,
   ): SearchRow[] {
-    const selected = selectedDocumentsSql()
+    const selected = selectedDocumentsSql(request, persistenceBinding.service !== undefined)
     const eventWhere = buildEventWhere(request.filters)
     assertFts5OuterPredicateCount(1 + eventWhere.predicateCount)
     const where = ['session_id = ?', eventWhere.sql].filter(Boolean).join(' AND ')
     const bindings = [
-      ...selectedDocumentsParams(request.query, persistenceBinding.service !== undefined),
+      ...selected.params,
       request.sessionId,
       ...eventWhere.params,
       request.limit + 1,
@@ -779,7 +797,88 @@ function headerBindings(header: SessionHeader): (string | number | null)[] {
   ]
 }
 
-function selectedDocumentsSql(): { sql: string } {
+function selectedDocumentsSql(
+  search: NormalizedSessionRequest | NormalizedEventRequest,
+  persistenceVisible: boolean,
+): { sql: string; params: Array<string | number> } {
+  const visible = persistenceVisible ? 1 : 0
+  if (search.matchCase || search.useRegularExpression) {
+    const indexedPredicate = search.useRegularExpression ? '' : ' AND persisted_docs MATCH ?'
+    const liveIndexedPredicate = search.useRegularExpression ? '' : ' WHERE live_docs MATCH ?'
+    const expression = quoteFtsData(search.query, !search.matchWholeWord)
+    const params: Array<string | number> = [visible]
+    if (!search.useRegularExpression) params.push(expression)
+    params.push(visible)
+    if (!search.useRegularExpression) params.push(expression)
+    params.push(
+      search.query,
+      search.matchCase ? 1 : 0,
+      search.matchWholeWord ? 1 : 0,
+      search.useRegularExpression ? 1 : 0,
+      FTS_HIGHLIGHT_START,
+      Buffer.byteLength(FTS_HIGHLIGHT_START, 'utf8'),
+    )
+    return {
+      sql: `WITH raw_candidates AS (
+        SELECT
+          pd.session_id AS session_id,
+          ps.version AS version,
+          ps.created_at AS created_at,
+          ps.cwd AS cwd,
+          ps.parent_session AS parent_session,
+          ps.seed_length AS seed_length,
+          ps.delegation_depth AS delegation_depth,
+          ps.agent_preset AS agent_preset,
+          0 AS live,
+          1 AS persisted,
+          CAST(pd.seq AS INTEGER) AS seq,
+          pd.type AS type,
+          CAST(pd.time AS INTEGER) AS time,
+          pd.surface AS surface,
+          pd.text AS raw_text,
+          CAST(pd.codepoint_length AS INTEGER) AS document_length
+        FROM persisted_docs AS pd
+        JOIN persisted_sessions AS ps ON ps.id = pd.session_id
+        WHERE ? = 1${indexedPredicate}
+          AND NOT EXISTS (SELECT 1 FROM temp.live_sessions AS ls WHERE ls.id = pd.session_id)
+        UNION ALL
+        SELECT
+          ld.session_id AS session_id,
+          ls.version AS version,
+          ls.created_at AS created_at,
+          ls.cwd AS cwd,
+          ls.parent_session AS parent_session,
+          ls.seed_length AS seed_length,
+          ls.delegation_depth AS delegation_depth,
+          ls.agent_preset AS agent_preset,
+          1 AS live,
+          CASE WHEN ? = 1 THEN ls.persisted ELSE 0 END AS persisted,
+          CAST(ld.seq AS INTEGER) AS seq,
+          ld.type AS type,
+          CAST(ld.time AS INTEGER) AS time,
+          ld.surface AS surface,
+          ld.text AS raw_text,
+          CAST(ld.codepoint_length AS INTEGER) AS document_length
+        FROM temp.live_docs AS ld
+        JOIN temp.live_sessions AS ls ON ls.id = ld.session_id
+        ${liveIndexedPredicate}
+      ), candidates AS (
+        SELECT
+          raw_candidates.*,
+          dsh_search_highlight(raw_text, ?, ?, ?, ?) AS marked_text
+        FROM raw_candidates
+      ), matched AS (
+        SELECT *,
+          (
+            length(CAST(marked_text AS BLOB))
+            - length(CAST(replace(marked_text, ?, '') AS BLOB))
+          ) / ? AS match_count
+        FROM candidates
+        WHERE marked_text IS NOT NULL
+      )`,
+      params,
+    }
+  }
   return {
     sql: `WITH candidates AS (
       SELECT
@@ -833,11 +932,16 @@ function selectedDocumentsSql(): { sql: string } {
         ) / ? AS match_count
       FROM candidates
     )`,
+    params: selectedDocumentsParams(search.query, persistenceVisible, search.matchWholeWord),
   }
 }
 
-function selectedDocumentsParams(query: string, persistenceVisible: boolean): Array<string | number> {
-  const expression = quoteFtsData(query)
+function selectedDocumentsParams(
+  query: string,
+  persistenceVisible: boolean,
+  matchWholeWord: boolean,
+): Array<string | number> {
+  const expression = quoteFtsData(query, !matchWholeWord)
   const visible = persistenceVisible ? 1 : 0
   return [
     FTS_HIGHLIGHT_START,

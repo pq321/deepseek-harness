@@ -16,7 +16,7 @@ import {
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
+  SessionId, SessionListState, SessionSearchOptions, SessionSearchResultItem, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from './tree.ts'
@@ -32,11 +32,32 @@ import css from './WorkspaceBrowser.module.css'
  */
 const EXPAND_SLIDE_MS = 300
 /** Pause between the latest keystroke and a Host content-search request. */
-const SEARCH_DEBOUNCE_MS = 250
+const SEARCH_DEBOUNCE_MS = 350
+const SEARCH_CONTENT_MIN_CHARS = 3
 /** `session.search` wire bound, measured in JavaScript UTF-16 code units. */
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
+
+const DEFAULT_SEARCH_OPTIONS: SessionSearchOptions = {
+  matchCase: false,
+  matchWholeWord: false,
+  useRegularExpression: false,
+}
+
+function searchIdentity(query: string, options: SessionSearchOptions): string {
+  return `${query}\0${options.matchCase ? 1 : 0}${options.matchWholeWord ? 1 : 0}${options.useRegularExpression ? 1 : 0}`
+}
+
+function validRegularExpression(query: string, options: SessionSearchOptions): boolean {
+  if (!options.useRegularExpression || query === '') return true
+  try {
+    new RegExp(query, `u${options.matchCase ? '' : 'i'}`)
+    return true
+  } catch {
+    return false
+  }
+}
 
 /** Keep controlled input and RPC payload inside the session.search wire contract. */
 function sanitizeSearchQuery(value: string): string {
@@ -663,8 +684,8 @@ function FlatList({
 }
 
 interface RemoteSearchState {
-  query: string
-  status: 'idle' | 'loading' | 'ready' | 'error'
+  identity: string
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'invalid'
   items: readonly SessionSearchResultItem[]
   hasMore: boolean
 }
@@ -676,6 +697,7 @@ function SearchResults({
   workspaces,
   archivedSessionIds,
   query,
+  options,
   remote,
   resultLimit,
   t,
@@ -683,19 +705,23 @@ function SearchResults({
   workspaces: readonly WorkspaceView[]
   archivedSessionIds: readonly SessionNode['id'][]
   query: string
+  options: SessionSearchOptions
   remote: RemoteSearchState
   resultLimit: number
 }) {
   const list = useSessions(s => s)
-  const currentRemote = remote.query === query
+  const identity = searchIdentity(query, options)
+  const currentRemote = remote.identity === identity
     ? remote
-    : { query, status: 'loading' as const, items: [], hasMore: false }
+    : { identity, status: 'idle' as const, items: [], hasMore: false }
   const results = useMemo(
-    () => deriveSearchResults(list, workspaces, query, archivedSessionIds, currentRemote, resultLimit),
-    [list, workspaces, query, archivedSessionIds, currentRemote, resultLimit],
+    () => deriveSearchResults(list, workspaces, query, archivedSessionIds, currentRemote, resultLimit, options),
+    [list, workspaces, query, archivedSessionIds, currentRemote, resultLimit, options],
   )
   const pending = currentRemote.status === 'loading'
   const failed = currentRemote.status === 'error'
+  const invalid = currentRemote.status === 'invalid'
+  const settled = currentRemote.status === 'ready' || failed || invalid
 
   return (
     <div className={clsx(css.treeBody, css.wide)}>
@@ -719,7 +745,12 @@ function SearchResults({
             {t('search.unavailable')}
           </div>
         )}
-        {!pending && results.items.length === 0 && (
+        {invalid && (
+          <div className={css.searchWarning} role="status">
+            {t('search.invalidRegex')}
+          </div>
+        )}
+        {settled && results.items.length === 0 && !invalid && (
           <div className={css.empty}>{t('search.noMatches')}</div>
         )}
         {results.hasMore && (
@@ -783,10 +814,12 @@ export function WorkspaceBrowser({
   // The query outlives the tree and the input (both wide-only) so collapsing
   // does not silently drop an in-progress filter.
   const [query, setQuery] = useState('')
+  const [searchOptions, setSearchOptions] = useState<SessionSearchOptions>(DEFAULT_SEARCH_OPTIONS)
   const [searchExpanded, setSearchExpanded] = useState(false)
   const normalizedQuery = sanitizeSearchQuery(query).trim()
+  const normalizedSearchIdentity = searchIdentity(normalizedQuery, searchOptions)
   const [remoteSearch, setRemoteSearch] = useState<RemoteSearchState>({
-    query: '',
+    identity: searchIdentity('', DEFAULT_SEARCH_OPTIONS),
     status: 'idle',
     items: [],
     hasMore: false,
@@ -831,21 +864,37 @@ export function WorkspaceBrowser({
 
   useEffect(() => {
     if (normalizedQuery === '') {
-      setRemoteSearch({ query: '', status: 'idle', items: [], hasMore: false })
+      setRemoteSearch({ identity: normalizedSearchIdentity, status: 'idle', items: [], hasMore: false })
       return
     }
     const controller = new AbortController()
     setRemoteSearch({
-      query: normalizedQuery,
-      status: 'loading',
+      identity: normalizedSearchIdentity,
+      status: 'idle',
       items: [],
       hasMore: false,
     })
+    if (!validRegularExpression(normalizedQuery, searchOptions)) {
+      setRemoteSearch({
+        identity: normalizedSearchIdentity,
+        status: 'invalid',
+        items: [],
+        hasMore: false,
+      })
+      return () => { controller.abort() }
+    }
+    if (Array.from(normalizedQuery).length < SEARCH_CONTENT_MIN_CHARS) return () => { controller.abort() }
     const timer = window.setTimeout(() => {
-      searchSessions(normalizedQuery, controller.signal).then((result) => {
+      setRemoteSearch({
+        identity: normalizedSearchIdentity,
+        status: 'loading',
+        items: [],
+        hasMore: false,
+      })
+      searchSessions(normalizedQuery, searchOptions, controller.signal).then((result) => {
         if (controller.signal.aborted) return
         setRemoteSearch({
-          query: normalizedQuery,
+          identity: normalizedSearchIdentity,
           status: 'ready',
           items: result.items,
           hasMore: result.hasMore,
@@ -853,7 +902,7 @@ export function WorkspaceBrowser({
       }).catch(() => {
         if (controller.signal.aborted) return
         setRemoteSearch({
-          query: normalizedQuery,
+          identity: normalizedSearchIdentity,
           status: 'error',
           items: [],
           hasMore: false,
@@ -864,7 +913,7 @@ export function WorkspaceBrowser({
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [normalizedQuery, searchSessions])
+  }, [normalizedQuery, normalizedSearchIdentity, searchOptions, searchSessions])
 
   // Rename dialog (browser-owned so it outlives row unmounts during collapse).
   const [renameTarget, setRenameTarget] = useState<{ workspaceId: WorkspaceId; currentTitle: string } | null>(null)
@@ -1021,6 +1070,31 @@ export function WorkspaceBrowser({
                 }}
               />
               {searchExpanded && (
+                <div className={css.searchOptions}>
+                  {([
+                    ['matchCase', 'Aa', 'search.matchCase'],
+                    ['matchWholeWord', 'ab', 'search.matchWholeWord'],
+                    ['useRegularExpression', '.*', 'search.useRegularExpression'],
+                  ] as const).map(([option, label, localeKey]) => (
+                    <Tooltip key={option} label={t(localeKey)} side="bottom" delayMs={300}>
+                      <button
+                        type="button"
+                        className={clsx(css.searchOptionButton, searchOptions[option] && css.searchOptionButtonActive)}
+                        aria-label={t(localeKey)}
+                        aria-pressed={searchOptions[option]}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSearchOptions(current => ({ ...current, [option]: !current[option] }))
+                          searchInput.current?.focus()
+                        }}
+                      >
+                        {label}
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
+              )}
+              {searchExpanded && (
                 <button
                   type="button"
                   className={css.clearButton}
@@ -1114,6 +1188,7 @@ export function WorkspaceBrowser({
               workspaces={workspaces}
               archivedSessionIds={archivedSessionIds}
               query={normalizedQuery}
+              options={searchOptions}
               remote={remoteSearch}
               resultLimit={searchResultLimit}
               t={t}

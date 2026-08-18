@@ -33,7 +33,9 @@ import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
-import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
+import type {
+  SessionListPhase, SessionSearchOptions, SessionSearchResultItem, SubagentCatalogSnapshot,
+} from './manager.ts'
 import type { PendingInteractionStatus } from './pending.ts'
 import { SessionProvideChannel } from './provide.ts'
 import type { Session } from './session.ts'
@@ -434,15 +436,17 @@ export class SessionRuntime implements ISessions {
   /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
-   * @param query - non-blank literal phrase.
+   * @param query - non-blank text query.
    * @param signal - cancellation for a superseded search.
+   * @param options - optional text-matching controls.
    * @returns bounded results or a business/transport error.
    */
   search(
     query: string,
     signal: AbortSignal,
+    options?: SessionSearchOptions,
   ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
-    return this.manager.search(query, signal)
+    return this.manager.search(query, signal, options)
   }
 
   /**
