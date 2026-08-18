@@ -6,6 +6,7 @@ import {
   buildSessionWhere,
   FTS_HIGHLIGHT_END,
   FTS_HIGHLIGHT_START,
+  highlightSearchText,
   makeSnippet,
   normalizeEventRequest,
   normalizeSessionRequest,
@@ -27,6 +28,9 @@ describe('SQLite search request normalization', () => {
   it('normalizes both scopes, defaults arrays and limits, and preserves cursors', () => {
     expect(normalizeSessionRequest({ query: '  alpha\n beta  ' }, limits)).toEqual({
       query: 'alpha beta',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       sessionFilters: [],
       eventFilters: [],
       limit: 2,
@@ -39,6 +43,9 @@ describe('SQLite search request normalization', () => {
       cursor: SessionSearchCursor('next'),
     }, limits)).toEqual({
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       sessionFilters: [{ kind: 'availability', values: ['live'] }],
       eventFilters: [{ kind: 'surface', values: ['current'] }],
       limit: 3,
@@ -47,6 +54,9 @@ describe('SQLite search request normalization', () => {
     expect(normalizeEventRequest({ sessionId: SessionId('s'), query: 'needle' }, limits)).toEqual({
       sessionId: SessionId('s'),
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       filters: [],
       limit: 2,
     })
@@ -58,6 +68,9 @@ describe('SQLite search request normalization', () => {
     }, limits)).toEqual({
       sessionId: SessionId('s'),
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       filters: [{ kind: 'seq', from: 1 }],
       limit: 2,
       cursor: SessionSearchCursor('next'),
@@ -70,6 +83,8 @@ describe('SQLite search request normalization', () => {
     expect(() => normalizeSessionRequest({ query: ' \n ' }, limits))
       .toThrow(expectCode('SESSION_QUERY_INVALID_QUERY'))
     expect(() => normalizeSessionRequest({ query: 'bad\0query' }, limits))
+      .toThrow(expectCode('SESSION_QUERY_INVALID_QUERY'))
+    expect(() => normalizeSessionRequest({ query: '[bad', useRegularExpression: true }, limits))
       .toThrow(expectCode('SESSION_QUERY_INVALID_QUERY'))
     expect(() => normalizeEventRequest({ sessionId: 1 as never, query: 'x' }, limits))
       .toThrow(expectCode('SESSION_QUERY_INVALID_FILTER'))
@@ -204,12 +219,29 @@ describe('SQLite search predicate compilation', () => {
 
 describe('SQLite query identity and presentation', () => {
   it('quotes all caller MATCH syntax as data', () => {
-    expect(quoteFtsData('say "needle" OR *')).toBe('"say ""needle"" OR *"')
+    expect(quoteFtsData('say "needle" OR *')).toBe('"say ""needle"" OR *"*')
+    expect(quoteFtsData('say "needle" OR *', false)).toBe('"say ""needle"" OR *"')
+  })
+
+  it('highlights case-sensitive, whole-word, and regular-expression matches', () => {
+    const literal = { matchCase: true, matchWholeWord: false, useRegularExpression: false }
+    expect(highlightSearchText('Alpha bravo', { query: 'Alpha', ...literal }))
+      .toBe(`${FTS_HIGHLIGHT_START}Alpha${FTS_HIGHLIGHT_END} bravo`)
+    expect(highlightSearchText('Alpha bravo', { query: 'alpha', ...literal })).toBeNull()
+    expect(highlightSearchText('word wording', {
+      query: 'word', matchCase: false, matchWholeWord: true, useRegularExpression: false,
+    })).toBe(`${FTS_HIGHLIGHT_START}word${FTS_HIGHLIGHT_END} wording`)
+    expect(highlightSearchText('spatiotemporal', {
+      query: 'spatio.*ral', matchCase: false, matchWholeWord: false, useRegularExpression: true,
+    })).toBe(`${FTS_HIGHLIGHT_START}spatiotemporal${FTS_HIGHLIGHT_END}`)
   })
 
   it('canonicalizes request and filter ordering in both scopes', () => {
     const sessionA: NormalizedSessionRequest = {
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       limit: 2,
       sessionFilters: [
         { kind: 'cwd', values: ['/b', '/a'] },
@@ -221,6 +253,9 @@ describe('SQLite query identity and presentation', () => {
     }
     const sessionB: NormalizedSessionRequest = {
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       limit: 2,
       sessionFilters: [
         { kind: 'created-at', from: 1 },
@@ -235,12 +270,18 @@ describe('SQLite query identity and presentation', () => {
     const eventA: NormalizedEventRequest = {
       sessionId: SessionId('s'),
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       limit: 2,
       filters: [{ kind: 'seq' }, { kind: 'surface', values: ['shadowed', 'current'] }],
     }
     const eventB: NormalizedEventRequest = {
       sessionId: SessionId('s'),
       query: 'needle',
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
       limit: 2,
       filters: [{ kind: 'surface', values: ['current', 'shadowed'] }, { kind: 'seq' }],
     }

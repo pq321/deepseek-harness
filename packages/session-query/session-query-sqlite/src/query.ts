@@ -66,6 +66,9 @@ export interface QueryLimits {
 /** Normalized cross-session request. */
 export interface NormalizedSessionRequest {
   query: string
+  matchCase: boolean
+  matchWholeWord: boolean
+  useRegularExpression: boolean
   sessionFilters: readonly SessionResultFilter[]
   eventFilters: readonly SessionEventMetadataFilter[]
   limit: number
@@ -76,6 +79,9 @@ export interface NormalizedSessionRequest {
 export interface NormalizedEventRequest {
   sessionId: SessionEventSearchRequest['sessionId']
   query: string
+  matchCase: boolean
+  matchWholeWord: boolean
+  useRegularExpression: boolean
   filters: readonly SessionEventMetadataFilter[]
   limit: number
   cursor?: SessionSearchCursor
@@ -101,11 +107,21 @@ export function normalizeSessionRequest(
   request: SessionSearchRequest,
   limits: QueryLimits,
 ): NormalizedSessionRequest {
+  const query = normalizeQuery(request.query, request.useRegularExpression !== true)
+  if (request.useRegularExpression === true) compileSearchRegExp({
+    query,
+    matchCase: request.matchCase === true,
+    matchWholeWord: request.matchWholeWord === true,
+    useRegularExpression: true,
+  })
   const sessionFilters = materializeSessionResultFilters(request.sessionFilters ?? [])
   const eventFilters = materializeMetadataFilters(request.eventFilters ?? [])
   const cursor = materializeCursor(request.cursor)
   return {
-    query: normalizeQuery(request.query),
+    query,
+    matchCase: request.matchCase === true,
+    matchWholeWord: request.matchWholeWord === true,
+    useRegularExpression: request.useRegularExpression === true,
     sessionFilters,
     eventFilters,
     limit: normalizeLimit(request.limit, limits),
@@ -128,9 +144,19 @@ export function normalizeEventRequest(
   }
   const filters = materializeMetadataFilters(request.filters ?? [])
   const cursor = materializeCursor(request.cursor)
+  const query = normalizeQuery(request.query, request.useRegularExpression !== true)
+  if (request.useRegularExpression === true) compileSearchRegExp({
+    query,
+    matchCase: request.matchCase === true,
+    matchWholeWord: request.matchWholeWord === true,
+    useRegularExpression: true,
+  })
   return {
     sessionId: request.sessionId,
-    query: normalizeQuery(request.query),
+    query,
+    matchCase: request.matchCase === true,
+    matchWholeWord: request.matchWholeWord === true,
+    useRegularExpression: request.useRegularExpression === true,
     filters,
     limit: normalizeLimit(request.limit, limits),
     ...cursor === undefined ? {} : { cursor },
@@ -216,12 +242,55 @@ export function buildEventWhere(filters: readonly SessionEventMetadataFilter[]):
 }
 
 /**
- * Quote caller text as one FTS5 phrase so query syntax remains inert data.
+ * Quote caller text as one FTS5 prefix phrase so query syntax remains inert data.
+ * The wildcard is outside the phrase and therefore applies only to its final
+ * token; this preserves phrase ordering while allowing a partial final word.
  * @param query - normalized caller query.
- * @returns FTS5 expression containing one escaped literal phrase.
+ * @param prefix - whether to append the final-token prefix wildcard.
+ * @returns FTS5 expression containing one escaped prefix phrase.
  */
-export function quoteFtsData(query: string): string {
-  return `"${query.replaceAll('"', '""')}"`
+export function quoteFtsData(query: string, prefix = true): string {
+  return `"${query.replaceAll('"', '""')}"${prefix ? '*' : ''}`
+}
+
+type NormalizedTextSearch = Pick<
+  NormalizedSessionRequest,
+  'query' | 'matchCase' | 'matchWholeWord' | 'useRegularExpression'
+>
+
+/**
+ * Compile one validated matcher for raw indexed document text.
+ * @param search - normalized text and matching-mode controls.
+ * @returns a global Unicode matcher for the requested search mode.
+ */
+export function compileSearchRegExp(search: NormalizedTextSearch): RegExp {
+  const source = search.useRegularExpression
+    ? search.query
+    : search.query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const bounded = search.matchWholeWord
+    ? `(?<![\\p{L}\\p{N}\\p{M}_])(?:${source})(?![\\p{L}\\p{N}\\p{M}_])`
+    : source
+  try {
+    return new RegExp(bounded, `gu${search.matchCase ? '' : 'i'}`)
+  } catch (error: unknown) {
+    throw new SessionQueryError(
+      `invalid session-search regular expression: ${error instanceof Error ? error.message : String(error)}`,
+      'SESSION_QUERY_INVALID_QUERY',
+    )
+  }
+}
+
+/**
+ * Return marker-highlighted text when a raw document matches.
+ * @param text - raw indexed document text.
+ * @param search - normalized text and matching-mode controls.
+ * @returns highlighted text, or `null` when no match exists.
+ */
+export function highlightSearchText(text: string, search: NormalizedTextSearch): string | null {
+  const pattern = compileSearchRegExp(search)
+  if (!pattern.test(text)) return null
+  pattern.lastIndex = 0
+  return text.replace(pattern, `${FTS_HIGHLIGHT_START}$&${FTS_HIGHLIGHT_END}`)
 }
 
 /**
@@ -247,6 +316,9 @@ export function requestFingerprint(request: NormalizedSessionRequest | Normalize
       scope: 'events',
       sessionId: request.sessionId,
       query: request.query,
+      matchCase: request.matchCase,
+      matchWholeWord: request.matchWholeWord,
+      useRegularExpression: request.useRegularExpression,
       filters: canonicalFilters(request.filters),
       limit: request.limit,
     })
@@ -254,6 +326,9 @@ export function requestFingerprint(request: NormalizedSessionRequest | Normalize
   return JSON.stringify({
     scope: 'sessions',
     query: request.query,
+    matchCase: request.matchCase,
+    matchWholeWord: request.matchWholeWord,
+    useRegularExpression: request.useRegularExpression,
     sessionFilters: canonicalFilters(request.sessionFilters),
     eventFilters: canonicalFilters(request.eventFilters),
     limit: request.limit,
@@ -315,11 +390,12 @@ function normalizeMarkedText(markedText: string): { text: string; matchStart: nu
   }
 }
 
-function normalizeQuery(value: string): string {
+function normalizeQuery(value: string, normalizeWhitespace: boolean): string {
   if (typeof value !== 'string') {
     throw new SessionQueryError('session-search query must be text', 'SESSION_QUERY_INVALID_QUERY')
   }
-  const query = value.trim().replace(/\s+/gu, ' ')
+  const trimmed = value.trim()
+  const query = normalizeWhitespace ? trimmed.replace(/\s+/gu, ' ') : trimmed
   if (query.length === 0) {
     throw new SessionQueryError(
       'session-search query must contain non-whitespace text',

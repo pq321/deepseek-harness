@@ -119,7 +119,15 @@ describe('session.search', () => {
     const api = createApiProxy(ctx, defaults)
     const signal = new AbortController().signal
 
-    const response = await api.sessions.search(request('matching answer'), signal)
+    const response = await api.sessions.search({
+      rpcId: RpcId('search-matching-answer'),
+      payload: {
+        query: 'matching answer',
+        matchCase: true,
+        matchWholeWord: true,
+        useRegularExpression: true,
+      },
+    }, signal)
 
     expect(response.result).toEqual({
       ok: true,
@@ -135,6 +143,9 @@ describe('session.search', () => {
     ]
     expect(query).toEqual({
       query: 'matching answer',
+      matchCase: true,
+      matchWholeWord: true,
+      useRegularExpression: true,
       eventFilters: [
         {
           kind: 'type',

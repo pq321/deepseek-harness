@@ -6,6 +6,10 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'search.matchCase': '区分大小写',
+  'search.matchWholeWord': '全字匹配',
+  'search.useRegularExpression': '使用正则表达式',
+  'search.invalidRegex': '正则表达式无效',
   'group.ungrouped': '未分组',
   'session.new': '新会话',
   'section.workspaces': '工作区',
@@ -75,6 +79,10 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'search.matchCase': 'Match case',
+  'search.matchWholeWord': 'Match whole word',
+  'search.useRegularExpression': 'Use regular expression',
+  'search.invalidRegex': 'Invalid regular expression',
   'group.ungrouped': 'Ungrouped',
   'session.new': 'New Session',
   'section.workspaces': 'Workspaces',

@@ -6,7 +6,7 @@
 
 ## 搜索约定
 
-`searchSessions(request, exec?)` 返回跨语料库的 `SessionSearchHit` 分页结果；`searchEvents(request, exec?)` 返回单个会话内的 `SessionEventSearchHit` 分页结果。查询不得省略，首尾空白会被移除，内部空白会被规范化，并按字面短语处理。引号、`OR`、`NEAR` 和 `*` 等 FTS5 语法被视为数据，而非可执行 MATCH 语法。元数据过滤器是在排名前应用的参数化 SQL 谓词。为使 SQLite FTS5 MATCH 保持在受支持的外层谓词上下文中，跨会话请求最多可编译 14 个组合会话与事件过滤谓词；会话内请求最多可编译 13 个过滤谓词，因为固定目标会话谓词占用一个 slot。每个范围端点编译为一个谓词。请求超过任一谓词预算，或超过 SQLite 可移植的 32,766 总绑定上限（包括固定查询和分页值）时，会在准备语句前以 `SESSION_QUERY_INVALID_FILTER` 失败。
+`searchSessions(request, exec?)` 返回跨语料库的 `SessionSearchHit` 分页结果；`searchEvents(request, exec?)` 返回单个会话内的 `SessionEventSearchHit` 分页结果。查询不得省略，首尾空白会被移除。默认模式会规范化内部空白，并搜索一个不区分大小写的字面短语，其最后一个 token 可以是前缀，因此 `spatiotempora` 能匹配 `spatiotemporal`；`matchWholeWord` 会移除该前缀扩展。`matchCase` 会使用原始文档文本复核索引候选项。`useRegularExpression` 保留内部空白，将查询编译为 Unicode JavaScript 正则表达式，并扫描索引中的原始文档文本；`matchCase` 控制其 `i` 标志，`matchWholeWord` 则添加由 Unicode 字母、数字、标记和下划线定义的边界。无效表达式以 `SESSION_QUERY_INVALID_QUERY` 失败。字面模式中的 FTS5 语法仍被视为数据。元数据过滤器是在排名前应用的参数化 SQL 谓词。为使 SQLite FTS5 MATCH 保持在受支持的外层谓词上下文中，跨会话请求最多可编译 14 个组合会话与事件过滤谓词；会话内请求最多可编译 13 个过滤谓词，因为固定目标会话谓词占用一个 slot。每个范围端点编译为一个谓词。请求超过任一谓词预算，或超过 SQLite 可移植的 32,766 总绑定上限（包括固定查询和分页值）时，会在准备语句前以 `SESSION_QUERY_INVALID_FILTER` 失败。
 
 持久表和 TEMP 表之间的相关性排名可直接比较：先按实际 FTS5 高亮匹配 span 数降序，再按已存储文档码点长度升序。事件时间、适用时的会话 id 和 seq 打破其余平局。跨会话结果将所选事件公开为 `bestMatch`；两种范围都从 FTS5 高亮位置派生空白规范化的纯文本，并按 Unicode 码点限制长度。游标是带品牌类型的不透明值，绑定到规范化请求和服务实例，并在相关世代变更时失败。会话内游标可在不相关会话变更后延续使用；跨会话游标则不能。
 
@@ -37,7 +37,7 @@
 
 ## 分词器与限制
 
-该索引使用 FTS5 `unicode61`。取舍是 token/短语召回而非任意子字符串召回：`AI` 不匹配 token `BRAID`。需要执行字面的空白弹性子字符串扫描时，使用 `ctx.sessionQuery.filterEvents()` 并传入 `text` 子句。查询会拒绝 NUL；文档中的保留高亮标记和 NUL 会在索引前被规范化，使展示标记无法与源文本冲突。
+默认索引模式使用 FTS5 `unicode61`：它只扩展最后一个 token 的前缀，因此 `AI` 仍不会匹配 `BRAID` 的内部片段。正则表达式模式可以表达任意子字符串，但会同步扫描索引中的原始文档文本，因此成本更高。查询会拒绝 NUL；文档中的保留高亮标记和 NUL 会在索引前被规范化，使展示标记无法与源文本冲突。
 
 中止信号会停止已排队工作，并原样流经快照枚举和非修改式检查。来源工作一旦开始，串行化状态机会自行等待该后端 promise，即使后端忽略取消，之后也会在启动任何进一步的枚举、检查、对账或查询工作前检查信号。因此，调用方只会在已启动后端工作完全停稳后观察到取消，而后续搜索在该清理尚未完成时无法进入 serializer。Node 的同步 `DatabaseSync` API 无法中断已在 JavaScript 线程上执行的元数据或 MATCH 语句；系统会在这些不可抢占调用前后立即检查信号。
 
@@ -53,5 +53,5 @@
 
 - **无调用方授权**：这是上下文范围内的可信服务；模型工具或 UI 必须强制执行自己的访问策略。
 - **同步查询执行**：`DatabaseSync` 在 MATCH 执行期间会阻塞 JavaScript 线程，且无法中断已运行的语句。
-- **Token 召回，而非任意子字符串**：`unicode61` tokenizer 不会匹配更大 token 中的子字符串；对字面扫描使用 `filterEvents()`。
+- **正则表达式成本**：正则表达式模式通过同步 `DatabaseSync` 执行扫描索引中的原始文档，阻塞 JavaScript 线程的时间可能长于索引字面搜索。
 - **单一所有者的派生索引**：每个索引路径必须仅归一个进程中的一个服务所有；不支持外部写入者和多进程共享。

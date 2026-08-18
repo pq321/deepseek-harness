@@ -228,6 +228,13 @@ export interface SessionSearchItem {
   snippet: string
 }
 
+/** Optional text-matching controls for one session-content search. */
+export interface SessionSearchOptions {
+  matchCase?: boolean
+  matchWholeWord?: boolean
+  useRegularExpression?: boolean
+}
+
 /** Session-domain unary methods (the map keys session.* of RpcMethodMap). */
 export interface SessionsApi {
   /** Lists persisted sessions (updatedAt descending). v1 returns everything; cursor is a reserved seat, unimplemented. */
@@ -237,9 +244,10 @@ export interface SessionsApi {
    * Searches the current user/assistant/steering message surface across
    * sessions visible to `list`. Results contain at most 20 sessions and carry
    * no continuation cursor; `hasMore` asks the client to refine the query.
+   * Optional controls select case, whole-word, and regular-expression matching.
    */
   search(
-    request: RpcRequest<{ query: string }>,
+    request: RpcRequest<{ query: string } & SessionSearchOptions>,
     signal: AbortSignal,
   ): Promise<RpcResponse<{ items: SessionSearchItem[]; hasMore: boolean }>>
 

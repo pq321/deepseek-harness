@@ -2,10 +2,15 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+
+// The service reads its initial locale from the browser; these specs assert
+// the shipped Chinese copy, so they state the browser they assume.
+usePinnedBrowserLanguages('zh-CN')
 
 async function bench() {
   const ctx = new Context()
@@ -20,9 +25,11 @@ async function bench() {
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
   const clear = vi.fn()
+  const clearMessageFocus = vi.fn()
+  const requestMessageFocus = vi.fn()
   const search = vi.fn(async () => ({
     ok: true as const,
-    value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },
+    value: { items: [{ sessionId: 'session' as never, eventSeq: 5, snippet: 'match' }], hasMore: false },
   }))
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
@@ -31,18 +38,12 @@ async function bench() {
     create, startSession, rename, insertSessionBefore,
   } as never)
   ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
-  ctx.provide('connection', {
-    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
-  } as never)
+  ctx.provide('conversation', { clearMessageFocus, requestMessageFocus } as never)
   const locale = new LocaleRuntime(ctx)
-  // These specs assert the shipped Chinese copy. There is no jsdom `window`
-  // in this lane, so browser-language detection never runs and the locale
-  // comes from FALLBACK_LOCALE (en): state the asserted locale explicitly.
-  locale.setLocale('zh')
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
-    insertSessionBefore, open, clear, search, renameSession, binding, fork,
+    insertSessionBefore, open, clear, clearMessageFocus, requestMessageFocus, search, renameSession, binding, fork,
   }
 }
 
@@ -56,7 +57,7 @@ function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
 
 describe('ui-workspace apply', () => {
   it('declares the services it drives', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale', 'connection'])
+    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale', 'conversation'])
   })
 
   it('registers browser and pickers for declarations arriving before or after apply', async () => {
@@ -90,12 +91,16 @@ describe('ui-workspace apply', () => {
     expect(b.startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)
     expect(b.open).toHaveBeenCalledWith('session')
+    expect(b.clearMessageFocus).toHaveBeenCalledOnce()
+    browser.open('session' as never, 5)
+    expect(b.requestMessageFocus).toHaveBeenCalledWith('session', 5)
     const signal = new AbortController().signal
-    await expect(browser.searchSessions('match', signal)).resolves.toEqual({
-      items: [{ sessionId: 'session', snippet: 'match' }],
+    const options = { matchCase: false, matchWholeWord: false, useRegularExpression: false }
+    await expect(browser.searchSessions('match', options, signal)).resolves.toEqual({
+      items: [{ sessionId: 'session', eventSeq: 5, snippet: 'match' }],
       hasMore: false,
     })
-    expect(b.search).toHaveBeenCalledWith('match', signal)
+    expect(b.search).toHaveBeenCalledWith('match', signal, options)
     expect(browser.searchResultLimit).toBe(20)
     await browser.renameSession('session' as never, 'renamed session')
     expect(b.binding).toHaveBeenCalledWith('session')
@@ -128,7 +133,6 @@ describe('ui-workspace apply', () => {
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
-    expect(browser.hooks.hostDescription.getSnapshot()).toBeUndefined()
     expect(picker.hooks.directoryFlow.getSnapshot()).toBe(false)
     // A flow occupant flips exactly its own surface, and the source notifies.
     const notified = vi.fn()
@@ -152,7 +156,11 @@ describe('ui-workspace apply', () => {
     declare(b.slots, 'sidebar.workspaces')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
-    await expect(browser.searchSessions('needle', new AbortController().signal))
+    await expect(browser.searchSessions(
+      'needle',
+      { matchCase: false, matchWholeWord: false, useRegularExpression: false },
+      new AbortController().signal,
+    ))
       .rejects.toThrow('index unavailable')
   })
 

@@ -489,6 +489,26 @@ describe('SQLite session search', () => {
     await expect(ctx.sessionQuery.searchSessions({ query: '*' })).resolves.toEqual({ items: [] })
   })
 
+  it('supports partial, case-sensitive, whole-word, and regular-expression matching', async () => {
+    const ctx = await liveContext()
+    const session = ctx.sessions.create(SessionId('search-modes'), {
+      seed: messageEvents('spatiotemporal CaseToken wording'),
+    })
+
+    await expect(ctx.sessionQuery.searchSessions({ query: 'spatiotempora' }))
+      .resolves.toMatchObject({ items: [{ header: { id: session.id } }] })
+    await expect(ctx.sessionQuery.searchSessions({ query: 'spatio', matchWholeWord: true }))
+      .resolves.toEqual({ items: [] })
+    await expect(ctx.sessionQuery.searchSessions({ query: 'CaseToken', matchCase: true }))
+      .resolves.toMatchObject({ items: [{ header: { id: session.id } }] })
+    await expect(ctx.sessionQuery.searchSessions({ query: 'casetoken', matchCase: true }))
+      .resolves.toEqual({ items: [] })
+    await expect(ctx.sessionQuery.searchSessions({
+      query: 'spatio.*ral',
+      useRegularExpression: true,
+    })).resolves.toMatchObject({ items: [{ header: { id: session.id } }] })
+  })
+
   it('ranks live and persisted matches on one source-comparable contract', async () => {
     const persisted = header('z-persisted')
     TestPersistence.reset([

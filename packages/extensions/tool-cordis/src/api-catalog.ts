@@ -3898,7 +3898,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventSearchRequest',
-    declaration: 'export interface SessionEventSearchRequest {\n    sessionId: SessionId;\n    query: string;\n    filters?: readonly SessionEventMetadataFilter[];\n    limit?: number;\n    cursor?: SessionSearchCursor;\n}',
+    declaration: 'export interface SessionEventSearchRequest extends SessionTextSearchOptions {\n    sessionId: SessionId;\n    query: string;\n    filters?: readonly SessionEventMetadataFilter[];\n    limit?: number;\n    cursor?: SessionSearchCursor;\n}',
   },
   {
     name: 'SessionEventSurface',
@@ -4022,7 +4022,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionSearchRequest',
-    declaration: 'export interface SessionSearchRequest {\n    query: string;\n    sessionFilters?: readonly SessionResultFilter[];\n    eventFilters?: readonly SessionEventMetadataFilter[];\n    limit?: number;\n    cursor?: SessionSearchCursor;\n}',
+    declaration: 'export interface SessionSearchRequest extends SessionTextSearchOptions {\n    query: string;\n    sessionFilters?: readonly SessionResultFilter[];\n    eventFilters?: readonly SessionEventMetadataFilter[];\n    limit?: number;\n    cursor?: SessionSearchCursor;\n}',
   },
   {
     name: 'SessionStartSource',
@@ -4043,6 +4043,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionTelemetrySharingStatus',
     declaration: 'export type SessionTelemetrySharingStatus = \'full\' | \'feedback-only\' | \'disabled\';',
+  },
+  {
+    name: 'SessionTextSearchOptions',
+    declaration: 'export interface SessionTextSearchOptions {\n    matchCase?: boolean;\n    matchWholeWord?: boolean;\n    useRegularExpression?: boolean;\n}',
   },
   {
     name: 'SessionTitleAutomaticMode',

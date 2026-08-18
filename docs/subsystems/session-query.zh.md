@@ -151,8 +151,8 @@ type SessionSearchCursor = Branded<'SessionSearchCursor'>
 
 ```ts type-equiv
 /** Cross-session full-text search request. */
-interface SessionSearchRequest {
-  /** Full-text query interpreted as data, never executable FTS syntax. */
+interface SessionSearchRequest extends SessionTextSearchOptions {
+  /** Text query; interpreted as a regular expression only when explicitly enabled. */
   query: string
   /** Logical-session predicates applied before event ranking. */
   sessionFilters?: readonly SessionResultFilter[]
@@ -167,10 +167,10 @@ interface SessionSearchRequest {
 
 ```ts type-equiv
 /** Within-session full-text search request. */
-interface SessionEventSearchRequest {
+interface SessionEventSearchRequest extends SessionTextSearchOptions {
   /** Session whose live-preferred logical log is searched. */
   sessionId: SessionId
-  /** Full-text query interpreted as data, never executable FTS syntax. */
+  /** Text query; interpreted as a regular expression only when explicitly enabled. */
   query: string
   /** Event predicates applied before ranking. */
   filters?: readonly SessionEventMetadataFilter[]

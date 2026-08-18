@@ -29,7 +29,7 @@ import type { HostObservable, PropsHooks, PropsLocale, PropsRenderSlots, PropsRu
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  SessionId, SessionSearchResultItem, WorkspaceId, WorkspaceView,
+  SessionId, SessionSearchOptions, SessionSearchResultItem, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
@@ -106,6 +106,7 @@ export type WorkspaceBrowserInjected = {
    */
   searchSessions: (
     query: string,
+    options: SessionSearchOptions,
     signal: AbortSignal,
   ) => Promise<{ items: readonly SessionSearchResultItem[]; hasMore: boolean }>
   /** Maximum number of merged rows rendered for one search. */

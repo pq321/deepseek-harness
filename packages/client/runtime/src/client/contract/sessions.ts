@@ -13,7 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentContext } from '../agents/scope.ts'
-import type { SessionSearchResultItem } from '../sessions/manager.ts'
+import type { SessionSearchOptions, SessionSearchResultItem } from '../sessions/manager.ts'
 import type {
   SessionBinding, SessionListState, SessionProvideDescriptor,
 } from '../sessions/service.ts'
@@ -76,13 +76,15 @@ export interface ISessions {
   /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
-   * @param query - non-blank literal phrase.
+   * @param query - non-blank text query.
    * @param signal - cancellation for a superseded search.
+   * @param options - optional text-matching controls.
    * @returns bounded results, or a business/transport error.
    */
   search(
     query: string,
     signal: AbortSignal,
+    options?: SessionSearchOptions,
   ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
   /**
    * Fork a session from a completed-turn prefix of the source; on resolution

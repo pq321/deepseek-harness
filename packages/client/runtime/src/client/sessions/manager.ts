@@ -39,6 +39,13 @@ export interface SessionSearchResultItem {
   snippet: string
 }
 
+/** Text-matching controls for session-content search. */
+export interface SessionSearchOptions {
+  matchCase: boolean
+  matchWholeWord: boolean
+  useRegularExpression: boolean
+}
+
 /** Immutable session-list snapshot for useSessionList. */
 export interface SessionListSnapshot {
   items: readonly SessionListEntry[]
@@ -511,16 +518,27 @@ export class SessionManager {
   /**
    * Search visible session message content without adding transient query
    * state to the list snapshot.
-   * @param query - non-blank literal phrase.
+   * @param query - non-blank text query.
    * @param signal - cancellation for superseded UI queries.
+   * @param options - case, whole-word, and regular-expression controls.
    * @returns the Host result or a folded transport error.
    */
   async search(
     query: string,
     signal: AbortSignal,
+    options: SessionSearchOptions = {
+      matchCase: false,
+      matchWholeWord: false,
+      useRegularExpression: false,
+    },
   ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
     try {
-      return (await this.api.sessions.search({ query }, signal)).result
+      return (await this.api.sessions.search({
+        query,
+        ...(options.matchCase ? { matchCase: true } : {}),
+        ...(options.matchWholeWord ? { matchWholeWord: true } : {}),
+        ...(options.useRegularExpression ? { useRegularExpression: true } : {}),
+      }, signal)).result
     } catch (error: unknown) {
       return transportError(error)
     }

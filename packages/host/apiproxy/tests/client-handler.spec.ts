@@ -167,7 +167,12 @@ describe('unary round trip', () => {
   })
 
   it('round-trips a trimmed session search query and its bounded result metadata', async () => {
-    let seen: RpcRequest<{ query: string }> | undefined
+    let seen: RpcRequest<{
+      query: string
+      matchCase?: boolean
+      matchWholeWord?: boolean
+      useRegularExpression?: boolean
+    }> | undefined
     const api = scriptedApi({
       sessions: {
         search: (request) => {
@@ -179,8 +184,18 @@ describe('unary round trip', () => {
         },
       },
     })
-    const response = await client(api).sessions.search({ query: '  message text  ' })
-    expect(seen?.payload).toEqual({ query: 'message text' })
+    const response = await client(api).sessions.search({
+      query: '  message text  ',
+      matchCase: true,
+      matchWholeWord: true,
+      useRegularExpression: true,
+    })
+    expect(seen?.payload).toEqual({
+      query: 'message text',
+      matchCase: true,
+      matchWholeWord: true,
+      useRegularExpression: true,
+    })
     expect(response.result).toEqual({
       ok: true,
       value: {

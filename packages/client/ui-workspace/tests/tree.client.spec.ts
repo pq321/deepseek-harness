@@ -359,6 +359,23 @@ describe('deriveSearchResults', () => {
     expect(result.items).toEqual([])
   })
 
+  it('applies case, whole-word, and regular-expression controls to local metadata', () => {
+    const sessions = list(
+      { ...summary('one', 2), displayTitle: 'CaseToken wording' },
+      { ...summary('two', 1), displayTitle: 'casetoken word' },
+    )
+    const empty = { items: [], hasMore: false }
+    const options = { matchCase: true, matchWholeWord: false, useRegularExpression: false }
+    expect(deriveSearchResults(sessions, [], 'CaseToken', noArchive, empty, 10, options).items.map(row => row.id))
+      .toEqual([sid('one')])
+    expect(deriveSearchResults(sessions, [], 'word', noArchive, empty, 10, {
+      ...options, matchCase: false, matchWholeWord: true,
+    }).items.map(row => row.id)).toEqual([sid('two')])
+    expect(deriveSearchResults(sessions, [], '^Case.*word', noArchive, empty, 10, {
+      ...options, useRegularExpression: true,
+    }).items.map(row => row.id)).toEqual([sid('one')])
+  })
+
   it('uses the supplied cap and preserves either local overflow or backend hasMore', () => {
     const rows = Array.from({ length: 5 }, (_, index) => {
       const item = summary(`s-${String(index).padStart(2, '0')}`, index)
