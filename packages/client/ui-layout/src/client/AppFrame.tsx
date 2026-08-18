@@ -97,6 +97,7 @@ export function AppFrame({
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   const lastSession = useRef(detailsSession)
   useLayoutEffect(() => {
@@ -134,12 +135,17 @@ export function AppFrame({
   // (or the default when the wide preference is closed) and the center
   // absorbs the squeeze.
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
+  const mobile = viewport < 720
+  const mobileSidebarWidth = Math.min(360, Math.max(280, viewport - 24))
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  useEffect(() => {
+    if (!mobile) setMobileSidebarOpen(false)
+  }, [mobile])
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -165,10 +171,16 @@ export function AppFrame({
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{
+        gridTemplateColumns: mobile
+          ? `${mobileSidebarOpen ? mobileSidebarWidth : 0}px minmax(0, 1fr) 0px`
+          : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px`,
+      }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
+      data-mobile={mobile || undefined}
+      data-mobile-sidebar-open={mobile && mobileSidebarOpen || undefined}
     >
       <div className={css.sidebarCol}>
         {/* Render-site slot call with live concession output: a closed
@@ -177,8 +189,8 @@ export function AppFrame({
             (collapsed follows the resolved rail, so a derived auto-collapse
             renders the rail UI too). */}
         {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
+          collapsed: mobile ? !mobileSidebarOpen : sidebarCollapsed,
+          width: mobile ? mobileSidebarWidth : cols.sidebar,
         })}
       </div>
       <>
@@ -187,15 +199,43 @@ export function AppFrame({
             the shell's own pending rendering. The conversation
             is session-maybe; the strict details entry naturally renders
             empty while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
+        <CenterColumn>
+          {mobile && (
+            <div className={css.mobileHeader} data-mobile-header>
+              <button
+                type="button"
+                className={css.mobileMenuButton}
+                aria-label="打开会话列表"
+                aria-expanded={mobileSidebarOpen}
+                onClick={() => { setMobileSidebarOpen(open => !open) }}
+              >
+                <span aria-hidden="true">☰</span>
+                <span>会话</span>
+              </button>
+              <div className={css.mobileStatus} aria-label="远程主机状态">
+                <span className={css.mobileStatusDot} aria-hidden="true" />
+                <span>主机在线</span>
+              </div>
+            </div>
+          )}
+          <div className={css.conversationViewport}>{renderSlot('conversation', {})}</div>
+        </CenterColumn>
         <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
       </>
+      {mobile && mobileSidebarOpen && (
+        <button
+          type="button"
+          className={css.mobileBackdrop}
+          aria-label="关闭会话列表"
+          onClick={() => { setMobileSidebarOpen(false) }}
+        />
+      )}
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {!mobile && !sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {!mobile && cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

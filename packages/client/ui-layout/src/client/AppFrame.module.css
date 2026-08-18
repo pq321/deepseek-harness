@@ -36,6 +36,20 @@
   overflow: hidden;
 }
 
+.conversationViewport {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobileHeader,
+.mobileBackdrop {
+  display: none;
+}
+
 .detailsCol {
   min-width: 0;
   overflow: hidden;
@@ -116,4 +130,96 @@
 
 .overlayLayer > * {
   pointer-events: auto;
+}
+
+@media (max-width: 719px) {
+  .frame[data-mobile] {
+    display: grid;
+    grid-template-rows: 100%;
+  }
+
+  .frame[data-mobile] .sidebarCol {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(360px, calc(100vw - 24px));
+    z-index: 30;
+    box-shadow: 18px 0 40px rgb(0 0 0 / 18%);
+    transform: translateX(-100%);
+    transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  }
+
+  .frame[data-mobile][data-mobile-sidebar-open] .sidebarCol {
+    transform: translateX(0);
+  }
+
+  .frame[data-mobile] .centerCol {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .frame[data-mobile] .detailsCol {
+    display: none;
+  }
+
+  .mobileHeader {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 52px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+    background: var(--dsw-alias-bg-base);
+    z-index: 3;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 10px;
+    background: var(--dsw-alias-button-elevated-fill);
+    color: var(--dsw-alias-label-primary);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .mobileStatus {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+  }
+
+  .mobileStatusDot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #2fbf71;
+    box-shadow: 0 0 0 3px rgb(47 191 113 / 12%);
+  }
+
+  .mobileBackdrop {
+    position: fixed;
+    inset: 0;
+    display: block;
+    z-index: 25;
+    border: 0;
+    padding: 0;
+    background: rgb(10 14 20 / 36%);
+  }
+
+  .frame[data-mobile] .overlayLayer {
+    z-index: 40;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-mobile] .sidebarCol {
+    transition: none;
+  }
 }
