@@ -122,13 +122,11 @@
   padding: 10px 12px 0;
 }
 
-/* Rail seat: the card's top padding (10px) plus this 4px matches DeepSeek
-   Chat's spacing above the thumbnails; the card's 12px flex gap owns the space
-   below. The rail itself (arrows, hidden scrollbar, card geometry) is the
-   ui-attachment atom's. */
+/* Rail seat: equal vertical padding centers compact attachments in their own
+   band; the card gap then separates that band from the draft below. */
 .attachments {
   min-width: 0;
-  padding: 4px 12px 0;
+  padding: 4px 12px;
 }
 
 /* Floating overlay anchor (menu / popupSelect shell): entries position

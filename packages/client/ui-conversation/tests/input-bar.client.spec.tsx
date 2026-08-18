@@ -222,6 +222,40 @@ describe('attachment draft rail', () => {
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
   })
 
+  it('uses the clipboard file list and suppresses its temporary image path', () => {
+    const addAttachments = vi.fn(() => null)
+    const { textarea, shell } = bench({ addAttachments })
+    const image = new File([Uint8Array.of(1, 2, 3)], 'capture.PNG')
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }],
+        files: [image],
+        getData: () => String.raw`C:\Users\windows10\AppData\Local\Temp\capture.PNG`,
+      },
+    })
+    expect(addAttachments).toHaveBeenCalledWith([image])
+    expect(shell.snapshot.draft).toBe('')
+  })
+
+  it('does not duplicate a clipboard image mirrored by items and files', () => {
+    const addAttachments = vi.fn(() => null)
+    const { textarea } = bench({ addAttachments })
+    const itemImage = new File([Uint8Array.of(1, 2, 3)], 'capture.PNG', {
+      type: 'image/png', lastModified: 1,
+    })
+    const listedImage = new File([Uint8Array.of(1, 2, 3)], 'capture.PNG', {
+      lastModified: 2,
+    })
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => itemImage }],
+        files: [listedImage],
+        getData: () => '',
+      },
+    })
+    expect(addAttachments).toHaveBeenCalledWith([itemImage])
+  })
+
   it('accepts a drop anywhere on the page under the full-page overlay', () => {
     const addAttachments = vi.fn(() => null)
     const { view } = bench({ addAttachments })
@@ -386,7 +420,7 @@ describe('attachment draft rail', () => {
     }
     const { view, textarea, sink, removeAttachment } = bench({ attachments: [attachment] })
     expect(view.getByText('report.pdf')).toBeTruthy()
-    expect(view.getByText('application/pdf · 3 B')).toBeTruthy()
+    expect(view.getByText('PDF')).toBeTruthy()
     expect(view.queryByTitle('查看原图')).toBeNull()
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(sink).toHaveBeenCalledWith('', ['draft-file-1'], 'queue')

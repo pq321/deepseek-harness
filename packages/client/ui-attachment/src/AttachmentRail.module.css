@@ -1,5 +1,5 @@
-/* Thumbnail geometry mirrors DeepSeek Chat's composer rail: 64px cards with a
-   16px radius, remove control fully inside the card, arrows overlaid at the
+/* Compact composer rail: 52px image tiles and file rows, with the remove
+   control fully inside each item and arrows overlaid at the
    edges instead of a scrollbar. */
 
 .root {
@@ -9,7 +9,7 @@
 
 .rail {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
   /* Edge arrows page the overflow; the scrollbar stays hidden (both engines). */
@@ -28,25 +28,27 @@
 .item {
   position: relative;
   flex: none;
-  height: 64px;
+  height: 52px;
 }
 
 .imageItem {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 52px;
+  width: 52px;
 }
 
 .fileItem {
-  width: min(220px, calc(100vw - 72px));
+  flex: 0 0 min(196px, calc(100vw - 72px));
+  width: min(196px, calc(100vw - 72px));
 }
 
 .thumbnail {
-  width: 64px;
-  height: 64px;
+  box-sizing: border-box;
+  width: 52px;
+  height: 52px;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--dsw-alias-interactive-bg-hover);
   cursor: zoom-in;
 }
@@ -61,9 +63,10 @@
 .fileReference {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   width: 100%;
-  height: 64px;
-  padding: 9px 34px 9px 10px;
+  height: 52px;
+  padding: 6px 30px 6px 8px;
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
@@ -72,10 +75,10 @@
 
 .fileIcon {
   display: grid;
-  flex: 0 0 32px;
+  flex: 0 0 34px;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 6px;
   background: var(--dsw-specific-input-major);
   color: var(--dsw-alias-label-secondary);
@@ -84,7 +87,7 @@
 .fileText {
   display: flex;
   min-width: 0;
-  margin-left: 9px;
+  margin-left: 8px;
   flex-direction: column;
   gap: 2px;
 }
@@ -99,13 +102,13 @@
 .fileName {
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
-  line-height: 18px;
+  line-height: 17px;
 }
 
 .fileDetail {
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
-  line-height: 16px;
+  line-height: 14px;
 }
 
 .remove {

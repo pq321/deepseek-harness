@@ -75,15 +75,34 @@ describe('AttachmentRail', () => {
       kind: 'file' as const,
       id: 'report',
       name: 'reports/summary.pdf',
-      detail: 'application/pdf · 24 KB',
+      detail: 'PDF',
       removeLabel: '移除文件引用 reports/summary.pdf',
     }
     const view = render(<AttachmentRail items={[file]} labels={labels} onOpen={onOpen} onRemove={vi.fn()} />)
     expect(view.getByText('reports/summary.pdf')).toBeTruthy()
-    expect(view.getByText('application/pdf · 24 KB')).toBeTruthy()
+    expect(view.getByText('PDF')).toBeTruthy()
     expect(view.queryByTitle('查看原图')).toBeNull()
     expect(onOpen).not.toHaveBeenCalled()
     expect(view.getByRole('button', { name: '移除文件引用 reports/summary.pdf' })).toBeTruthy()
+  })
+
+  it('keeps mixed attachments in stable order and truncates names within the file row', () => {
+    const longName = 'a-very-long-file-name-that-must-not-resize-neighboring-items.md'
+    const file = {
+      kind: 'file' as const,
+      id: 'notes',
+      name: longName,
+      detail: 'MD',
+      removeLabel: `移除文件引用 ${longName}`,
+    }
+    const view = render(
+      <AttachmentRail items={[item('first'), file, item('last')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,
+    )
+    const rail = view.getByRole('group', { name: '待发送图片' })
+    expect([...rail.children].map(child => child.textContent?.trim() || child.querySelector('img')?.getAttribute('alt')))
+      .toEqual(['first.png', `${longName}MD`, 'last.png'])
+    expect(view.getByText(longName).getAttribute('class')).toContain('fileName')
+    expect(view.getByText(longName).closest('[title]')?.getAttribute('title')).toBe(longName)
   })
 
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {

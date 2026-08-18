@@ -108,13 +108,32 @@ describe('ConversationController', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
     const attachments = b.root.createDraftAttachments([
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
-      new File([Uint8Array.of(2)], 'diagram.svg', { type: 'image/svg+xml' }),
-      new File([Uint8Array.of(3)], 'archive.zip', { type: 'application/zip' }),
+      new File([Uint8Array.of(2)], 'windows-drop.PNG'),
+      new File([Uint8Array.of(3)], 'camera.JPEG', { type: 'application/octet-stream' }),
+      new File([Uint8Array.of(4)], 'misleading.png', { type: 'text/plain' }),
+      new File([Uint8Array.of(5)], 'diagram.svg', { type: 'image/svg+xml' }),
+      new File([Uint8Array.of(6)], 'archive.zip', { type: 'application/zip' }),
     ])
-    expect(attachments.map(attachment => attachment.kind)).toEqual(['image', 'file', 'file'])
-    expect(attachments[1]).toMatchObject({ kind: 'file', reference: 'diagram.svg' })
-    expect(attachments[2]).toMatchObject({ kind: 'file', reference: 'archive.zip' })
-    expect(created).toHaveBeenCalledOnce()
+    expect(attachments.map(attachment => attachment.kind)).toEqual(['image', 'image', 'image', 'file', 'file', 'file'])
+    expect(attachments[3]).toMatchObject({ kind: 'file', reference: 'misleading.png' })
+    expect(attachments[4]).toMatchObject({ kind: 'file', reference: 'diagram.svg' })
+    expect(attachments[5]).toMatchObject({ kind: 'file', reference: 'archive.zip' })
+    expect(created).toHaveBeenCalledTimes(3)
+    created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('serializes an extension-inferred image with its canonical media type', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:inferred')
+    const image = new File([Uint8Array.of(1)], 'windows-drop.PNG')
+    Object.defineProperty(image, 'arrayBuffer', { value: vi.fn(() => Promise.resolve(Uint8Array.of(1).buffer)) })
+    const [attachment] = b.root.createDraftAttachments([image])
+    if (attachment === undefined) throw new Error('draft attachment missing')
+    await b.root.sendSession(b.runtime.sessions.binding('s1')!.session, '', [attachment.id], 'queue')
+    expect(b.prompt).toHaveBeenCalledWith([
+      { type: 'image', mediaType: 'image/png', data: 'AQ==', name: 'windows-drop.PNG' },
+    ], 'queue')
     created.mockRestore()
     await b.runtime.dispose()
   })

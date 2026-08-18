@@ -160,7 +160,7 @@ export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, on
     if (el === null) return
     // One viewport minus a card keeps the last visible thumbnail as context;
     // the floor keeps narrow rails paging a useful distance.
-    el.scrollBy({ left: direction * Math.max(el.clientWidth - 64, 200), behavior: pageBehavior() })
+    el.scrollBy({ left: direction * Math.max(el.clientWidth - 52, 200), behavior: pageBehavior() })
   }
   return (
     <div className={css.root}>

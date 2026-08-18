@@ -6,7 +6,7 @@ Pure React attachment atoms (zero cordis): the composer draft-attachment rail (`
 
 ## Attachment rail
 
-`AttachmentRail` renders pending raster images as fixed 64px thumbnails and non-image files as 220px metadata rows (paperclip, browser-visible name or relative path, MIME type, and size) in one horizontally scrolling rail. File rows are references only and have no open action; image thumbnails retain single-click original preview. Overflow uses the same hidden-scrollbar paging behavior for both item kinds: circular edge arrows page one viewport (minus one image card of context, floored at 200px), vertical wheel input pans horizontally, new items reveal the rail end, and removal keeps the current position. Every item has a remove control; coarse-pointer surfaces keep it visible.
+`AttachmentRail` renders pending raster images as fixed 52px thumbnails and non-image files as compact 196px rows (paperclip, browser-visible name or relative path, and uppercase file type) in one horizontally scrolling rail. File rows are references only and have no open action; image thumbnails retain single-click original preview. Overflow uses the same hidden-scrollbar paging behavior for both item kinds: circular edge arrows page one viewport (minus one image card of context, floored at 200px), vertical wheel input pans horizontally, new items reveal the rail end, and removal keeps the current position. Every item has a remove control; coarse-pointer surfaces keep it visible.
 
 ## Message images and the lightbox
 

@@ -13,13 +13,14 @@ import type { Context } from '@deepseek-ai/cordis'
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
 import type { ISessions, ObservableSnapshot, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
 import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 import type { ConversationMessageFocus } from './contract/views.ts'
+import { resolveImageMediaType } from './image-files.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -76,7 +77,7 @@ export interface IConversation {
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
 function browserDraftAttachment(file: File): ComposerAttachment {
-  if (!isSupportedImageMediaType(file.type)) {
+  if (resolveImageMediaType(file) === null) {
     return {
       kind: 'file',
       id: crypto.randomUUID() as DraftAttachmentId,
@@ -384,29 +385,17 @@ export class ConversationController extends Service implements IConversation {
 
   /** Convert browser files to canonical base64 prompt parts. */
   private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({
-      type: 'image' as const,
-      mediaType: imageMediaType(file.type),
-      data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
-      ...(file.name === '' ? {} : { name: file.name }),
-    })))
+    return Promise.all(images.map(async (file) => {
+      const mediaType = resolveImageMediaType(file)
+      if (mediaType === null) throw new UnsupportedImageMediaTypeError(file.type)
+      return {
+        type: 'image' as const,
+        mediaType,
+        data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+        ...(file.name === '' ? {} : { name: file.name }),
+      }
+    }))
   }
-}
-
-function imageMediaType(value: string): ImageMediaType {
-  switch (value) {
-    case 'image/png':
-    case 'image/jpeg':
-    case 'image/webp':
-    case 'image/gif':
-      return value
-    default:
-      throw new UnsupportedImageMediaTypeError(value)
-  }
-}
-
-function isSupportedImageMediaType(value: string): value is ImageMediaType {
-  return value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif'
 }
 
 /** Build one durable model-visible text projection without reading file bytes. */

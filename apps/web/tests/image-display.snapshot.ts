@@ -134,6 +134,31 @@ it('accepts pasted images into the composer rail in order and removes them', asy
     expect(document.querySelector('[role="group"][aria-label="Pending attachments"]')).toBeNull()
   })
 
+  // Windows and desktop clipboards may omit file items, expose the PNG only
+  // through `files`, and mirror it as a temporary text path. The file becomes
+  // a thumbnail while that transport-only path stays out of the draft.
+  const clipboardImage = new File([new Uint8Array([137, 80, 78, 71])], 'clipboard.PNG')
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }],
+      files: [clipboardImage],
+      getData: () => String.raw`C:\Users\windows10\AppData\Local\Temp\clipboard.PNG`,
+    },
+  })
+  const clipboardRail = await waitFor(() => {
+    const el = document.querySelector('[role="group"][aria-label="Pending attachments"]')
+    if (el === null) throw new Error('clipboard-file rail missing')
+    return el
+  })
+  expect([...clipboardRail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toEqual(['clipboard.PNG'])
+  expect((textarea as HTMLTextAreaElement).value).toBe('')
+  const clipboardRemove = clipboardRail.querySelector<HTMLButtonElement>('button[aria-label^="Remove image"]')
+  if (clipboardRemove === null) throw new Error('clipboard image remove button missing')
+  fireEvent.click(clipboardRemove)
+  await waitFor(() => {
+    expect(document.querySelector('[role="group"][aria-label="Pending attachments"]')).toBeNull()
+  })
+
   // A non-image becomes a metadata-only file reference instead of entering
   // the image upload path or showing an unsupported-format toast.
   fireEvent.paste(textarea, {
@@ -148,7 +173,7 @@ it('accepts pasted images into the composer rail in order and removes them', asy
     return el
   })
   expect(fileRail.textContent).toContain('notes.txt')
-  expect(fileRail.textContent).toContain('text/plain')
+  expect(fileRail.textContent).toContain('TXT')
   expect(fileRail.querySelector('img')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
 })

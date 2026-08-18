@@ -29,6 +29,7 @@ import type { DraftDecorations } from '../input/decorations.ts'
 import {
   attachmentErrorText, attachmentRailLabels, dropOverlayLabels, imageSizeText, lightboxLabels,
 } from '../image-labels.ts'
+import { resolveImageMediaType } from '../image-files.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
@@ -39,19 +40,40 @@ const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: 
 /** Rail item carrying its source attachment for the open/remove callbacks. */
 type ComposerRailItem = AttachmentRailItem & { attachment: ComposerAttachment }
 
-function isSupportedImage(file: File): boolean {
-  return file.type === 'image/png' || file.type === 'image/jpeg'
-    || file.type === 'image/webp' || file.type === 'image/gif'
+function fileTypeLabel(file: File): string {
+  const extension = /\.([^.]+)$/.exec(file.name)?.[1]?.trim()
+  if (extension !== undefined && extension !== '') return extension.toUpperCase()
+  const subtype = file.type.split('/').at(-1)?.split(/[;+]/, 1)[0]?.trim()
+  return subtype === undefined || subtype === '' ? 'FILE' : subtype.toUpperCase()
 }
 
-function fileDetail(file: File): string {
-  const bytes = file.size
-  const size = bytes < 1024
-    ? `${bytes} B`
-    : bytes < 1024 * 1024
-      ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-      : `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
-  return file.type === '' ? size : `${file.type} · ${size}`
+/** Windows and some desktop apps expose copied files only through `files`,
+ * while browsers commonly expose them through `items`. When both carry files,
+ * `files` mirrors `items` but may report different metadata for the same bytes. */
+function clipboardFiles(data: DataTransfer): File[] {
+  const files = Array.from(data.items)
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  return files.length > 0 ? files : Array.from((data as Partial<DataTransfer>).files ?? [])
+}
+
+/** File-copy clipboards often mirror their payload as a temporary absolute
+ * path in text/plain. That transport artifact must not become prompt text. */
+function isClipboardFilePath(text: string, files: readonly File[]): boolean {
+  if (files.length === 0) return false
+  const paths = text.split(/\r?\n/).map(value => value.trim()).filter(value => value !== '')
+  if (paths.length === 0 || paths.length > files.length) return false
+  return paths.every((value) => {
+    const unquoted = value.replace(/^['"]|['"]$/g, '')
+    const absolute = /^[a-z]:[\\/]/i.test(unquoted) || /^\\\\/.test(unquoted)
+      || /^file:\/\//i.test(unquoted) || unquoted.startsWith('/')
+    if (!absolute) return false
+    const basename = unquoted.split(/[\\/]/).at(-1)?.toLowerCase()
+    if (basename === undefined || basename === '') return false
+    return files.some(file => file.name.toLowerCase() === basename
+      || (resolveImageMediaType(file) !== null && resolveImageMediaType({ name: basename, type: '' }) !== null))
+  })
 }
 
 export type InputBarProps = ComposerBarProps
@@ -406,12 +428,10 @@ export function InputBar({
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     if (keyboard === undefined) return // absent machine: no draft can accept a paste
     if (machineBusy || locked) return
-    const files = Array.from(e.clipboardData.items)
-      .filter(item => item.kind === 'file')
-      .map(item => item.getAsFile())
-      .filter((file): file is File => file !== null)
+    const files = clipboardFiles(e.clipboardData)
     if (files.length > 0) intakeAttachments(files)
-    const text = e.clipboardData.getData('text/plain')
+    const clipboardText = e.clipboardData.getData('text/plain')
+    const text = isClipboardFilePath(clipboardText, files) ? '' : clipboardText
     if (text === '') {
       if (files.length > 0) e.preventDefault()
       return
@@ -433,7 +453,7 @@ export function InputBar({
   // is a metadata-only reference, so its bytes never enter the upload budget.
   const intakeAttachments = useCallback((files: readonly File[]): void => {
     if (addAttachments === undefined || files.length === 0) return
-    const images = files.filter(isSupportedImage)
+    const images = files.filter(file => resolveImageMediaType(file) !== null)
     const heldImages = attachments.filter(attachment => attachment.kind === 'image')
     const rejected = ((): string | null => {
       if (imageLimits !== undefined) {
@@ -524,7 +544,7 @@ export function InputBar({
       }
       : {
         kind: 'file', id: attachment.id, name: attachment.reference,
-        detail: fileDetail(attachment.file),
+        detail: fileTypeLabel(attachment.file),
         removeLabel: t('file.remove', { name: attachment.reference }), attachment,
       }), [attachments, t])
 
