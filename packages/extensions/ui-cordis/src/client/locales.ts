@@ -53,6 +53,7 @@ export const zh = {
   'body.output': '结果',
   'body.copy': '复制',
   'body.copied': '已复制',
+  'view.runtime': 'Runtime',
 } satisfies Record<string, string>
 
 /** Translation keys owned by the Cordis UI namespace. */
@@ -116,4 +117,5 @@ export const en = {
   'body.output': 'Result',
   'body.copy': 'Copy',
   'body.copied': 'Copied',
+  'view.runtime': 'Runtime',
 } satisfies Record<CordisKey, string>

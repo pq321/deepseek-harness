@@ -70,3 +70,18 @@ export interface CordisPanelFace {
   onRemove(sessionId: SessionId, pluginId: CordisDynamicPluginId): Promise<CordisActionResult>
   onRefresh(): void
 }
+
+/** Full-screen Runtime view state and lifecycle verbs. */
+export interface CordisRuntimeViewFace {
+  /** The session whose dynamic plugins the tab lists. */
+  readonly sessionId: SessionId
+  hooks: {
+    inventory: CordisInventory
+    activeRuns: HostObservable<ReadonlyMap<CordisDynamicPluginId, CordisRunActivity>>
+  }
+  onApprove(requestId: ApprovalRequestId, approveFutureVersions: boolean): Promise<void>
+  onDecline(requestId: ApprovalRequestId): Promise<void>
+  onRun(request: CordisUserRunRequest): Promise<void>
+  onStop(sessionId: SessionId, pluginId: CordisDynamicPluginId): Promise<CordisActionResult>
+  onRemove(sessionId: SessionId, pluginId: CordisDynamicPluginId): Promise<CordisActionResult>
+}

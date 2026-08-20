@@ -4,6 +4,7 @@ import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/c
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { InputTriggerService, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from './events.ts'
@@ -11,10 +12,11 @@ import { CordisActionRow } from './CordisActionRow.tsx'
 import { CordisDefineRow } from './CordisDefineRow.tsx'
 import { CordisRunRow } from './CordisRunRow.tsx'
 import { CordisPanel } from './CordisPanel.tsx'
+import { CordisRuntimeView } from './CordisRuntimeView.tsx'
 import { createCordisInventory } from './inventory.ts'
 import { CordisRunCardRegistry } from './run-card-index.ts'
 import type { CordisDynamicPort } from './dynamic-port.ts'
-import type { CordisCardFace, CordisPanelFace, CordisRunCardFace } from './slots.ts'
+import type { CordisCardFace, CordisPanelFace, CordisRunCardFace, CordisRuntimeViewFace } from './slots.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { CordisCardFace, CordisPanelFace, CordisRunCardFace, CordisToolViewOwnerProps } from './slots.ts'
@@ -31,14 +33,18 @@ export type {
 } from './events.ts'
 export type { CordisKey } from './locales.ts'
 
-/** Required services for the two Tool cards, panel, Remote lifecycle, and Slash source. */
+/** Required services for the two Tool cards, panel, Runtime tab, Remote lifecycle, and Slash source. */
 export const inject = [
   'slots', 'locale', 'inputTriggers', 'remote', 'remote.dynamicCordisRunner', 'dynamicCordisRunner',
+  'sessions',
 ]
 
 /** Mount every Cordis browser surface over the shared Host inventory. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-cordis: dictionaries')
+  // Registration-time text (the Runtime tab label) reads through the bound
+  // translate as a thunk, so it follows the active locale without re-registration.
+  const t = ctx.locale.bind(NS)
 
   const port: CordisDynamicPort = {
     stop: async (sessionId, pluginId) => {
@@ -166,6 +172,26 @@ export function apply(ctx: ClientContext): void {
   }
   const slash = ctx.get('inputTriggers') as InputTriggerService
   ctx.effect(() => slash.registerSource(source), 'ui-cordis: @pluginId source')
+
+  // Register Runtime tab as a conversation.view
+  ctx.slots.inject('conversation.view', function* () {
+    yield ctx.slots.register({
+      name: 'conversation.view',
+      id: 'runtime',
+      locale: NS,
+      order: 300,
+      label: () => t('view.runtime'),
+      inject: (sessionId: SessionId): CordisRuntimeViewFace => ({
+        sessionId,
+        hooks: { inventory, activeRuns: runner.activeRuns },
+        onApprove: (requestId, approveFutureVersions) => runner.approve(requestId, approveFutureVersions),
+        onDecline: requestId => runner.decline(requestId),
+        onRun: request => runner.startUserRun(request),
+        onStop: (sessionId, pluginId) => port.stop(sessionId, pluginId),
+        onRemove: (sessionId, pluginId) => port.remove(sessionId, pluginId),
+      }),
+    }, CordisRuntimeView)
+  })
 
   inventory.refresh()
 }
