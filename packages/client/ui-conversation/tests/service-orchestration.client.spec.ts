@@ -10,7 +10,7 @@ import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-run
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
+import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
 async function bench(readAttachment?: SessionFace['readAttachment']) {
@@ -103,15 +103,39 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('validates every MIME type before allocating previews', async () => {
+  it('allocates previews for images and demotes other files to references', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
-    expect(() => b.root.createDraftImages([
+    const drafts = b.root.createDraftImages([
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
-      new File([Uint8Array.of(2)], 'invalid.svg', { type: 'image/svg+xml' }),
-    ])).toThrow(UnsupportedImageMediaTypeError)
-    expect(created).not.toHaveBeenCalled()
+      new File([Uint8Array.of(2)], 'notes.txt', { type: 'text/plain' }),
+    ])
+    expect(drafts.map(draft => draft.kind)).toEqual(['image', 'file'])
+    expect(created).toHaveBeenCalledOnce()
+    const file = drafts[1]!
+    if (file.kind !== 'file') throw new Error('unreachable')
+    expect(file.reference).toBe('notes.txt')
     created.mockRestore()
+    for (const draft of drafts) b.root.releaseDraftImage(draft.id)
+    await b.runtime.dispose()
+  })
+
+  it('appends a referenced-files section for file-only drafts on send', async () => {
+    const b = await bench()
+    const drafts = b.root.createDraftImages([
+      new File([Uint8Array.of(2)], 'notes"1".txt', { type: 'text/plain' }),
+    ])
+    const file = drafts[0]!
+    if (file.kind !== 'file') throw new Error('unreachable')
+    // Reach sendSession directly through the shell's session binding: the
+    // public send path rides the input machine.
+    const binding = b.runtime.sessions.binding('s1')!
+    await expect(b.root.sendSession(binding.session as SessionFace, 'look at this', [file.id], 'queue'))
+      .resolves.toEqual({ kind: 'success' })
+    expect(b.prompt).toHaveBeenCalledWith([{
+      type: 'text',
+      text: 'look at this\n\nReferenced files (content not uploaded):\n- "notes\\"1\\".txt"',
+    }], 'queue', undefined)
     await b.runtime.dispose()
   })
 

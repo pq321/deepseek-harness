@@ -38,7 +38,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 逐会话 UI 状态中的选择与活跃视图位于已声明的聊天 store（`stores.ts` `createChatStore`）中；InputHub 拥有输入区状态机，并将草稿镜像到该 store 以便持久化。apply 将同一个 store handle 传给严格限定于会话的子树、聊天视图和详情注册，因此每个会话内共享一个实例，框架拥有其生命周期。组件保持纯粹：框架标准工具包提供 `useSession`／`sessionId`、全局 `useSessions`／`useWorkspaces`，以及输入状态机的 `useInput`／`inputActions`；store 表层与 inject factory 提供其余状态和回调。
 
-图片经粘贴与整页拖放进入：输入栏绑定 document 级拖拽监听（composer-bar slot 为 `kind: 'single'`，同一时刻至多一个 bar 绑定），文件拖拽悬停窗口时显示 `DropOverlay` 原子组件——纯文本拖拽不受影响，锁定或忙碌的 composer 显示禁用遮罩并拒绝 drop。两种手势共用一条对宿主 `imageLimits` 投影的加入预检（数量、单图字节、总字节）：会突破上限的加入整批拒收，立刻弹出点名上限的横幅，完全不进入附件栏。仍然到达的宿主侧拒绝按 `attachment-error` 原因映射为产品文案（`image-labels.ts` 的 `attachmentErrorText`）；用户无法解决的原因折叠为一条带原因码的发送失败文案，非附件错误码保留开发者可读的原文加错误码。已附加的图片在每条发送路径上都是提交信封的一部分：斜杠命令提交要么消费它们（声明 `images` 的 claim 经 hub 的 `commandImages` 管道序列化图片、传给 `claim.submit`，仅在成功 outcome 后清除并释放），要么以 `command.imagesUnsupported` 通知拒绝整个提交，草稿与图片原样保留——命令不可能消费了文字却把图片留在原地。
+图片经粘贴与整页拖放进入：输入栏绑定 document 级拖拽监听（composer-bar slot 为 `kind: 'single'`，同一时刻至多一个 bar 绑定），文件拖拽悬停窗口时显示 `DropOverlay` 原子组件——纯文本拖拽不受影响，锁定或忙碌的 composer 显示禁用遮罩并拒绝 drop。两种手势共用一条加入预检：栅格图片（以声明的 MIME 判定；声明为空或 `application/octet-stream` 时按文件扩展名经 `image-files.ts` 解析）按宿主 `imageLimits` 投影（数量、单图字节、总字节）校验，会突破上限的加入整批拒收，立刻弹出点名上限的横幅；其他所有文件成为仅元数据的引用，不受这些上限约束。仍然到达的宿主侧拒绝按 `attachment-error` 原因映射为产品文案（`image-labels.ts` 的 `attachmentErrorText`）；用户无法解决的原因折叠为一条带原因码的发送失败文案，非附件错误码保留开发者可读的原文加错误码。已附加的图片在每条发送路径上都是提交信封的一部分：斜杠命令提交要么消费它们（声明 `images` 的 claim 经 hub 的 `commandImages` 管道序列化图片、传给 `claim.submit`，仅在成功 outcome 后清除并释放），要么以 `command.imagesUnsupported` 通知拒绝整个提交，草稿与图片原样保留——命令不可能消费了文字却把图片留在原地。文件引用不会随命令提交（`serializeDraftImages` 对其显式失败），而是在下一条普通提示词尾部追加引用文件小节。
 
 输入栏为 `'conversation.input.plan'`（位于本地 access 模式控件右侧）和 `'conversation.input.model'`（渲染在 pending 指示器与发送／停止控件之前）声明会话作用域的单实例 seat，并为 overlay、dock、left 和 right 输入扩展声明列表 slot。各功能包拥有相应控件及其状态；ui-conversation 提供放置位置、`locked` owner prop 和标准 slot share。前置加号按钮是 Command launcher，而非附件入口：它要求当前会话的 `InputTriggerController` 基于 textarea 当前 selection，只打开 `/` trigger 的 `command` source，同时 ui-input-trigger 既有的 `MenuView` 仍是唯一的浮层菜单与 pick 路径。不引入 File 行、file input、上传协议或第二套菜单组件。当 `plan` 投影的有效目标为 plan mode 时，InputBar 将文本框 placeholder 切换为 plan 任务措辞，经本包注册的 `conversation` locale 命名空间（`placeholder.plan` / `hint.plan` 键）本地化，并与已认领 `/plan` 命令的提示逐字共用同一份文案（经标准套件 `useProjection` 读取的 host 折叠值；owner 提供的 placeholder 优先）。另一个会话视图活跃时，待处理的 composer 接管仍保持挂载，使被阻塞的 agent（智能体）仍能收到回答；没有待处理交互时，活跃会话的 composer 归 Chat 所有。composer bar slot 本身为 `session-maybe`：没有当前会话时，同一个 bar 会让消息操作保持不可交互（machine face 均缺席、`disabled` owner prop），整张虚线卡片可经指针打开现有 Workspace picker，只读 textarea 也可通过 Enter 或 Space 打开。禁用控件会把指针事件交给卡片，卡片也会拦下 `pointerdown`，避免已打开 picker 的外点关闭与重新打开发生竞态。它不会换入一棵平行树，因此选择 Workspace 时 textarea DOM 不会被销毁；严格会话作用域的控件 seat 在会话存在之前保持为空。
 
@@ -50,11 +50,19 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 ## 模型体验
 
-无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。
+### 文件引用
+
+#### 模型看到什么
+
+提交的用户消息尾部会追加「Referenced files (content not uploaded)」小节，逐条列出浏览器可见的文件名或相对路径。文件内容不会被上传或读取。
+
+#### Token 影响
+
+每条引用向会话上下文追加固定的小节标题，以及经 JSON 转义的路径或名称。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+引用文本像普通提示词文本一样参与用户消息前缀。文件字节不进入请求，因此对缓存没有影响。
 
 ## 已知限制与暂缓事项
 

@@ -35,7 +35,11 @@ const labels: AttachmentRailLabels = {
 }
 
 function item(id: string): AttachmentRailItem {
-  return { id, previewUrl: `blob:${id}`, alt: `${id}.png`, removeLabel: `移除图片 ${id}.png` }
+  return { id, kind: 'image', previewUrl: `blob:${id}`, alt: `${id}.png`, removeLabel: `移除图片 ${id}.png` }
+}
+
+function fileItem(id: string): AttachmentRailItem {
+  return { id, kind: 'file', name: `${id}.txt`, detail: 'text/plain · 12 B', removeLabel: `移除文件引用 ${id}.txt` }
 }
 
 /** Stub the rail's scroll geometry (jsdom reports 0 for every metric). */
@@ -67,6 +71,22 @@ describe('AttachmentRail', () => {
     expect(onOpen).toHaveBeenCalledWith(items[0])
     fireEvent.click(view.getByRole('button', { name: '移除图片 b.png' }))
     expect(onRemove).toHaveBeenCalledWith(items[1])
+  })
+
+  it('renders file references with name and detail and routes remove clicks', () => {
+    const onOpen = vi.fn()
+    const onRemove = vi.fn()
+    const files = [fileItem('notes'), item('shot')]
+    const view = render(<AttachmentRail items={files} labels={labels} onOpen={onOpen} onRemove={onRemove} />)
+    const rail = view.getByRole('group', { name: '待发送图片' })
+    expect(rail.querySelectorAll('img')).toHaveLength(1)
+    expect(rail.textContent).toContain('notes.txt')
+    expect(rail.textContent).toContain('text/plain · 12 B')
+    // File rows are not openable; only the image routes the open click.
+    fireEvent.click(view.getByTitle('查看原图'))
+    expect(onOpen).toHaveBeenCalledWith(files[1])
+    fireEvent.click(view.getByRole('button', { name: '移除文件引用 notes.txt' }))
+    expect(onRemove).toHaveBeenCalledWith(files[0])
   })
 
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {

@@ -14,13 +14,14 @@ import type { Context } from '@deepseek-ai/cordis'
 // method) instead of the standalone helper.
 import type { ISessions, ObservableSnapshot, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
 import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 import type { ConversationMessageFocus } from './contract/views.ts'
+import { resolveImageMediaType } from './image-files.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -77,6 +78,14 @@ export interface IConversation {
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
 function browserDraftAttachment(file: File): ComposerAttachment {
+  if (resolveImageMediaType(file) === null) {
+    return {
+      kind: 'file',
+      id: crypto.randomUUID() as DraftAttachmentId,
+      file,
+      reference: (file.webkitRelativePath || '').trim() || file.name || 'unnamed-file',
+    }
+  }
   return {
     kind: 'image',
     id: crypto.randomUUID() as DraftAttachmentId,
@@ -210,8 +219,11 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
-    const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+    const images = attachments.filter(attachment => attachment.kind === 'image')
+    const files = attachments.filter(attachment => attachment.kind === 'file')
+    const uploaded = await this.serializeImages(images.map(attachment => attachment.file))
+    const promptText = serializePromptText(text, files.map(file => file.reference))
+    const content = [...uploaded, ...(promptText === '' ? [] : [{ type: 'text' as const, text: promptText }])]
     const result = await session.prompt(content, mode, signal)
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
@@ -219,16 +231,16 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Create runtime-only draft images and their object URLs.
-   * @param files - browser files to register after MIME validation.
+   * Create runtime-only draft attachments. Supported raster images receive
+   * object URLs; every other file remains a metadata-only reference.
+   * @param files - browser files to register.
    * @returns ordered draft descriptors.
    */
   createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
-    for (const file of files) imageMediaType(file.type)
     return files.map((file) => {
       const attachment = browserDraftAttachment(file)
       this.draftAttachments.set(attachment.id, attachment)
-      this.createdImageUrls.add(attachment.previewUrl)
+      if (attachment.kind === 'image') this.createdImageUrls.add(attachment.previewUrl)
       return attachment
     })
   }
@@ -250,7 +262,8 @@ export class ConversationController extends Service implements IConversation {
   /**
    * Serialize ordered draft images to command-submit wire payloads without
    * sending or releasing them (the composer releases only after the command
-   * settles successfully).
+   * settles successfully). File references cannot ride a command submission
+   * and fail loudly here.
    * @param imageIds - ordered draft-local attachment ids.
    * @returns base64 payloads in id order.
    */
@@ -259,23 +272,28 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.serializeDraftImages: one or more draft images are no longer available')
     }
+    if (attachments.some(attachment => attachment.kind === 'file')) {
+      throw new Error('conversation.serializeDraftImages: file references cannot ride command submissions')
+    }
     return Promise.all(attachments.map(attachment => this.encodeImage(attachment.file)))
   }
 
   /**
-   * Release one browser-owned draft image and preview URL.
+   * Release one browser-owned draft attachment and its preview URL.
    * @param id - draft attachment id.
    */
   releaseDraftImage(id: DraftAttachmentId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     this.draftAttachments.delete(id)
-    this.createdImageUrls.delete(attachment.previewUrl)
-    revokePreview(attachment.previewUrl)
+    if (attachment.kind === 'image') {
+      this.createdImageUrls.delete(attachment.previewUrl)
+      revokePreview(attachment.previewUrl)
+    }
   }
 
   /**
-   * Release a set of browser-owned draft images.
+   * Release a set of browser-owned draft attachments.
    * @param attachments - descriptors to release.
    */
   releaseDraftImages(attachments: readonly ComposerAttachment[]): void {
@@ -396,24 +414,22 @@ export class ConversationController extends Service implements IConversation {
 
   /** Canonical base64 wire form of one browser image file. */
   private async encodeImage(file: File): Promise<SubmitImageAttachment> {
+    const mediaType = resolveImageMediaType(file)
+    if (mediaType === null) throw new UnsupportedImageMediaTypeError(file.type)
     return {
-      mediaType: imageMediaType(file.type),
+      mediaType,
       data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
       ...(file.name === '' ? {} : { name: file.name }),
     }
   }
 }
 
-function imageMediaType(value: string): ImageMediaType {
-  switch (value) {
-    case 'image/png':
-    case 'image/jpeg':
-    case 'image/webp':
-    case 'image/gif':
-      return value
-    default:
-      throw new UnsupportedImageMediaTypeError(value)
-  }
+/** Build one durable model-visible text projection without reading file bytes. */
+function serializePromptText(text: string, references: readonly string[]): string {
+  if (references.length === 0) return text
+  const list = references.map(reference => `- ${JSON.stringify(reference)}`).join('\n')
+  const fileSection = `Referenced files (content not uploaded):\n${list}`
+  return text === '' ? fileSection : `${text}\n\n${fileSection}`
 }
 
 function bytesToBase64(data: Uint8Array): string {

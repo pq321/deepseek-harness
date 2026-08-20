@@ -1,25 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
-  ComposerAttachment, ComposerAttachmentsProps,
+  ComposerAttachment, ComposerAttachmentsProps, ComposerImageAttachment,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { AttachmentRail } from '../AttachmentRail.tsx'
 import type { AttachmentRailItem } from '../AttachmentRail.tsx'
 import { DropOverlay } from '../DropOverlay.tsx'
 import { ImageLightbox } from '../ImageLightbox.tsx'
-import { FilePickerButton } from '../FilePickerButton.tsx'
 import { attachmentRailLabels, dropOverlayLabels, lightboxLabels } from './labels.ts'
 import css from './ComposerAttachments.module.css'
 
 /** Rail item retaining its browser-owned attachment for callbacks. */
-interface ComposerRailItem extends AttachmentRailItem {
-  attachment: ComposerAttachment
+type ComposerRailItem = AttachmentRailItem & { attachment: ComposerAttachment }
+
+/** Human-readable MIME and size line for one metadata-only file reference. */
+function fileDetail(file: File): string {
+  const bytes = file.size
+  const size = bytes < 1024
+    ? `${bytes} B`
+    : bytes < 1024 * 1024
+      ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  return file.type === '' ? size : `${file.type} · ${size}`
 }
 
 /** Draft-image rail, document drop target, and original-image preview slot entry. */
 export function ComposerAttachments({
   attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, t,
 }: ComposerAttachmentsProps) {
-  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
+  const [preview, setPreview] = useState<ComposerImageAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
   const closePreview = useCallback(() => { setPreview(null) }, [])
@@ -79,13 +87,23 @@ export function ComposerAttachments({
     }
   }, [canAcceptDrop, onAddImages])
 
-  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
-    id: attachment.id,
-    previewUrl: attachment.previewUrl,
-    alt: attachment.file.name || t('image.pending'),
-    removeLabel: t('image.remove', { name: attachment.file.name }),
-    attachment,
-  })), [attachments, t])
+  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => attachment.kind === 'image'
+    ? {
+      id: attachment.id,
+      kind: 'image' as const,
+      previewUrl: attachment.previewUrl,
+      alt: attachment.file.name || t('image.pending'),
+      removeLabel: t('image.remove', { name: attachment.file.name }),
+      attachment,
+    }
+    : {
+      id: attachment.id,
+      kind: 'file' as const,
+      name: attachment.reference,
+      detail: fileDetail(attachment.file),
+      removeLabel: t('file.remove', { name: attachment.reference }),
+      attachment,
+    }), [attachments, t])
 
   return (
     <>
@@ -95,24 +113,18 @@ export function ComposerAttachments({
           labels={dropOverlayLabels(t, canAcceptDrop, dropLimits)}
         />
       )}
-      <div className={css.container}>
-        <FilePickerButton
-          disabled={!canAcceptDrop}
-          onFilesSelected={onAddImages}
-          label={t('image.addFiles')}
-          tooltip={t('image.addFilesTooltip')}
-        />
-        {railItems.length > 0 && (
-          <div className={css.rail}>
-            <AttachmentRail
-              items={railItems}
-              labels={attachmentRailLabels(t)}
-              onOpen={(item) => { setPreview(item.attachment) }}
-              onRemove={(item) => { onRemoveImage(item.attachment.id) }}
-            />
-          </div>
-        )}
-      </div>
+      {railItems.length > 0 && (
+        <div className={css.rail}>
+          <AttachmentRail
+            items={railItems}
+            labels={attachmentRailLabels(t)}
+            onOpen={(item) => {
+              if (item.attachment.kind === 'image') setPreview(item.attachment)
+            }}
+            onRemove={(item) => { onRemoveImage(item.attachment.id) }}
+          />
+        </div>
+      )}
       {preview !== null && (
         <ImageLightbox
           src={preview.previewUrl}

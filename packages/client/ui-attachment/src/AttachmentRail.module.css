@@ -27,9 +27,67 @@
 
 .item {
   position: relative;
+  flex: none;
+  height: 64px;
+}
+
+.imageItem {
   flex: 0 0 64px;
   width: 64px;
+}
+
+.fileItem {
+  width: min(220px, calc(100vw - 72px));
+}
+
+.fileReference {
+  display: flex;
+  align-items: center;
+  width: 100%;
   height: 64px;
+  padding: 9px 34px 9px 10px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.fileIcon {
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.fileText {
+  display: flex;
+  min-width: 0;
+  margin-left: 9px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fileName,
+.fileDetail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.fileDetail {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 14px;
 }
 
 .thumbnail {

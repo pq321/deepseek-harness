@@ -22,13 +22,25 @@ import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submissi
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, ConversationMessageFocus, SelectionTarget, ViewTab } from './views.ts'
 
-/** Browser-owned image that has not crossed the durable host boundary. */
-export interface ComposerAttachment {
+/** Browser-owned raster image that has not crossed the durable host boundary. */
+export interface ComposerImageAttachment {
   kind: 'image'
   id: DraftAttachmentId
   file: File
   previewUrl: string
 }
+
+/** Browser-owned file metadata represented as a reference, never uploaded. */
+export interface ComposerFileReference {
+  kind: 'file'
+  id: DraftAttachmentId
+  file: File
+  /** Browser-visible path when available, otherwise the file name. */
+  reference: string
+}
+
+/** One unsent composer attachment in draft order. */
+export type ComposerAttachment = ComposerImageAttachment | ComposerFileReference
 
 /** Input state handed to the optional attachment presentation plugin. */
 export interface ComposerAttachmentsOwnerProps {
